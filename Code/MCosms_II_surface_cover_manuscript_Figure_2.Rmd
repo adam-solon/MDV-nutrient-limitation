@@ -1,0 +1,189 @@
+---
+title: "Nutrient Limitation in the MDV of Antarctica"
+subtitle: "  \n Taylor Valley Surface Cover"
+author: "Adam J. Solon"
+date: "`r Sys.Date()`"
+#output: html_document
+output: 
+  pdf_document:
+    #includes:  
+     # in_header: my_header.txt
+    toc: TRUE
+    fig_width: 8
+    fig_height: 6
+    fig_caption: TRUE
+#fontsize: 12pt
+#editor_options: 
+#  chunk_output_type: console
+---
+
+# Script Summary  
+This pipeline creates a figure for a manuscript on the growth of primary producers from nutrient enrichments in microcosms of Taylor Valley soils collected across three enclosed lake basins, Bonney (interior), Hoare (intermediate), and Fryxell (coastal), compared to the growth of the controls (i.e. no nutrients added). There are four treatment groups from each basin: CTRL (controls with H2O only), N (nitrogen + H2O only), P (phosphorus + H2O only), and NP (N and P combined + H2O).  This figure depicts the time series of surface growth as percent surface cover.
+
+### Steps of this pipeline:  
+1.  Create and organize directories
+2.  Load R packages
+3.  Input files
+4.  Format File
+5.  Run analyses
+6.  Statistics
+7.  Interaction Plot
+
+```{r echo = FALSE, include = FALSE}
+# Change identifiers to your system and file naming. 
+user <- "C:/Users/adams" # computer user name
+folder <- "/Desktop/Projects"
+project <- "/MDV_Soils_nutrient_limitation/manuscript1"
+analyses <- "/analyses"
+data  <- "/point_intercept"
+analysis2 <- "/SC_surface_cover"
+ecosystem <- "lab microcosms - Taylor Valley soils" # Define the environment for use in report language.
+project.fp <- paste0(user, folder, project)
+```
+
+# Pipeline
+
+### Set paths and create directories 
+
+```{r set paths for project, echo = FALSE, include = FALSE}
+# First define the project and project folders. 
+
+# Create project directory
+###################################################
+project.fp <- paste0(user, folder, project)
+if (!dir.exists(project.fp)) dir.create(project.fp)
+
+# Create sub-directory for all analyses for project 
+###################################################
+analyses.fp <- paste0(project.fp, analyses)
+if (!dir.exists(analyses.fp)) dir.create(analyses.fp)
+
+# Create sub-directory for data type 
+###################################################
+data.fp <- paste0(analyses.fp, data)
+if (!dir.exists(data.fp)) dir.create(data.fp)
+
+# Create sub-directory for Response Ratio (RR) analysis
+###################################################
+analysis2.fp <- paste0(data.fp, analysis2)
+if (!dir.exists(analysis2.fp)) dir.create(analysis2.fp)
+
+# Create sub-directories for RR 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input2.fp <- paste0(analysis2.fp, "/input")
+if (!dir.exists(input2.fp)) dir.create(input2.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects2.fp <- paste0(analysis2.fp, "/objects")
+if (!dir.exists(objects2.fp)) dir.create(objects2.fp)
+
+# Create directory for 'after' pipeline outputs 
+output2.fp <- paste0(analysis2.fp, "/output")
+if (!dir.exists(output2.fp)) dir.create(output2.fp)
+
+# Create directory for 'figures' for manuscript 
+figures2.fp <- paste0(analysis2.fp, "/figures")
+if (!dir.exists(figures2.fp)) dir.create(figures2.fp)
+
+# create directories for each basin in objects directory
+#####################################################
+# Create directory for bonney 
+objects2.b.fp <- paste0(objects2.fp, "/bonney")
+if (!dir.exists(objects2.b.fp)) dir.create(objects2.b.fp)
+
+# Create directory for hoare
+objects2.h.fp <- paste0(objects2.fp, "/hoare")
+if (!dir.exists(objects2.h.fp)) dir.create(objects2.h.fp)
+
+# Create directory for fryxell 
+objects2.f.fp <- paste0(objects2.fp, "/fryxell")
+if (!dir.exists(objects2.f.fp)) dir.create(objects2.f.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis2.fp) 
+
+```
+
+### Session Information  
+
+```{r Install and load packages, echo = FALSE, include = FALSE}
+
+# install.packages("tidyverse")
+# install.packages("knitr")
+# install.packages("ggpubr")
+
+library(tidyverse); packageVersion("tidyverse")
+library(knitr); packageVersion("knitr")
+library(ggpubr); packageVersion("ggpubr")
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+```  
+  
+* r version: `r getRversion()`
+* RStudio version: `r rstudioapi::versionInfo()$version`
+* r packages:  
+  tidyverse, `r packageVersion("tidyverse")` 
+  knitr, `r packageVersion("knitr")`  
+  kableExtra, `r packageVersion("KableExtra")`  
+  
+### Input files 
+1. R objects of figures for each basin, filenames 'BNM_surface_cover_plot.Rds' , 'HRM_surface_cover_plot.Rds', and 'FXM_surface_cover_plot.Rds' outputs from scripts 'MCosms_II_surface_cover_bonney.Rmd', 'MCosms_II_surface_cover_hoare.Rmd', and 'MCosms_II_surface_cover_fryxell.Rmd'  
+
+```{r input data files, echo = FALSE, include = FALSE}
+# input data files
+# figures of respone ratios
+figure2.b.fp <- paste0(objects2.b.fp, "/BNM_surface_cover_plot.Rds") 
+figure2.h.fp <- paste0(objects2.h.fp, "/HRM_surface_cover_plot.Rds") 
+figure2.f.fp <- paste0(objects2.f.fp, "/FXM_surface_cover_plot.Rds") 
+
+
+#input files
+fg2.b <- readRDS(figure2.b.fp)
+fg2.h <- readRDS(figure2.h.fp)
+fg2.f <- readRDS(figure2.f.fp)
+
+```
+  
+### Arrange figures into one combined figure for manuscript  
+  
+\newpage
+```{r combine figures, echo=FALSE, include=FALSE}
+#### arrange all lnRR interaction plots from each basin together in one figure
+fg2.all <- ggarrange(fg2.b, fg2.h, fg2.f,
+          #labels = c("A", "B", "C"),
+          nrow = 3,
+          align = "hv")
+
+```
+  
+```{r time series plot, echo=FALSE, fig.height=12, fig.width=8, fig.pos = 'h', fig.cap = "Surface Growth as percent cover of soils from three enclosed lakes basins within Taylor Valley enriched with N and/or P, or no enrichment (i.e., controls). Each dashed line represents a single microcosm (i.e., replicate)."}
+#plot
+fg2.all
+
+```
+  
+```{r save combined figure as jpeg, echo=FALSE, include=FALSE}
+#check and set working directory
+setwd("C:/Users/adams/Desktop/projects/MDV_Soils_nutrient_limitation/manuscript1/analyses/point_intercept/SC_surface_cover/")
+getwd()
+
+#Save as jpg
+jpeg(filename = "figures/Taylor_Valley_surface_cover_time_series_plot.jpeg", 
+     width = 800, 
+     height = 1200, 
+     units = "px", 
+     pointsize = 11, 
+     quality = 100, 
+     bg = "white", 
+     res = NA)
+#
+fg2.all
+#
+# Close device
+dev.off()
+```

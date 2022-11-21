@@ -1,0 +1,511 @@
+---
+title: "Nutrient Limitation in the MDV of Antarctica"
+subtitle: "  \n Logistic Growth Model - Bonney Basin Soils"
+author: "Adam J. Solon"
+date: "`r Sys.Date()`"
+#output: html_document
+output: 
+  pdf_document:
+    #includes:  
+     # in_header: my_header.txt
+    toc: TRUE
+    fig_width: 8
+    fig_height: 6
+    fig_caption: true
+fontsize: 12pt
+#editor_options: 
+#  chunk_output_type: console
+---
+
+# Script Summary  
+This report quantifies the growth rate and carrying capacity of primary producers from Bonney Basin soils using a logistic growth model.  The experiment involved soils from Taylor Valley in the McMurdo Dry Valleys (MDV) of Antarctica and were collected from mountain slopes in one of three lake basins: Bonney(interior), Hoare(intermediate), and Fryxell(coastal).  There are four treatments: CTRL (controls with H2O only), N (nitrogen + H2O only), P (phosphorus + H2O only), and NP (N and P combined + H2O). 
+
+### Steps of this pipeline:  
+1.  Create and organize directories
+2.  Load R packages
+3.  Subset according to basin
+4.  Input files
+5.  Format Files
+6.  Run analyses
+7.  Plot curves  
+8.  Statistics  
+
+```{r, echo = FALSE, include = FALSE}
+# Change identifiers to your system and file naming. 
+user <- "C:/Users/adams" # computer user name
+folder <- "/Desktop/Projects"
+project <- "/MDV_Soils_nutrient_limitation/manuscript1"
+analyses <- "/analyses"
+data  <- "/point_intercept"
+analysis4 <- "/GR_growth_rate"
+ecosystem <- "lab microcosms - Taylor Valley soils" # Define the environment for use in report language.
+project.fp <- paste0(user, folder, project)
+```
+
+# Pipeline
+
+### Set paths and create directories 
+
+```{r set paths for project, echo = FALSE, include = FALSE}
+# First define the project and project folders. 
+
+# Create project directory
+###################################################
+project.fp <- paste0(user, folder, project)
+if (!dir.exists(project.fp)) dir.create(project.fp)
+
+# Create sub-directory for all analyses for project 
+###################################################
+analyses.fp <- paste0(project.fp, analyses)
+if (!dir.exists(analyses.fp)) dir.create(analyses.fp)
+
+# Create sub-directory for data type 
+###################################################
+data.fp <- paste0(analyses.fp, data)
+if (!dir.exists(data.fp)) dir.create(data.fp)
+
+# Create sub-directory for specific analysis 
+###################################################
+analysis4.fp <- paste0(data.fp, analysis4)
+if (!dir.exists(analysis4.fp)) dir.create(analysis4.fp)
+
+# Create sub-directories for analysis 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input.fp <- paste0(analysis4.fp, "/input")
+if (!dir.exists(input.fp)) dir.create(input.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects.fp <- paste0(analysis4.fp, "/objects")
+if (!dir.exists(objects.fp)) dir.create(objects.fp)
+
+# Create directory for 'after' pipeline outputs 
+output.fp <- paste0(analysis4.fp, "/output")
+if (!dir.exists(output.fp)) dir.create(output.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis4.fp) 
+
+```
+
+### Create additional sub-directories by analysis and basin  
+  
+```{r echo = FALSE, include = FALSE}
+# Create sub-directory for Growth Rates (GR) analysis
+###################################################
+analysis4.fp <- paste0(data.fp, analysis4)
+if (!dir.exists(analysis4.fp)) dir.create(analysis4.fp)
+
+# Create sub-directories for GR 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input4.fp <- paste0(analysis4.fp, "/input")
+if (!dir.exists(input4.fp)) dir.create(input4.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects4.fp <- paste0(analysis4.fp, "/objects")
+if (!dir.exists(objects4.fp)) dir.create(objects4.fp)
+
+# Create directory for 'after' pipeline outputs 
+output4.fp <- paste0(analysis4.fp, "/output")
+if (!dir.exists(output4.fp)) dir.create(output4.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis4.fp) 
+
+# Create further sub-directories by basin
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects4.b.fp <- paste0(objects4.fp, "/bonney")
+if (!dir.exists(objects4.b.fp)) dir.create(objects4.b.fp)
+
+# Create directory for 'after' pipeline outputs 
+output4.b.fp <- paste0(output4.fp, "/bonney")
+if (!dir.exists(output4.b.fp)) dir.create(output4.b.fp)
+
+# Create sub-directories for Hoare basin 
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects4.h.fp <- paste0(objects4.fp, "/hoare")
+if (!dir.exists(objects4.h.fp)) dir.create(objects4.h.fp)
+
+# Create directory for 'after' pipeline outputs 
+output4.h.fp <- paste0(output4.fp, "/hoare")
+if (!dir.exists(output4.h.fp)) dir.create(output4.h.fp)
+
+# Create sub-directories for Fryxell basin 
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects4.f.fp <- paste0(objects4.fp, "/fryxell")
+if (!dir.exists(objects4.f.fp)) dir.create(objects4.f.fp)
+
+# Create directory for 'after' pipeline outputs 
+output4.f.fp <- paste0(output4.fp, "/fryxell")
+if (!dir.exists(output4.f.fp)) dir.create(output4.f.fp)
+
+```
+
+### Session Information  
+
+```{r Install and load packages, echo = FALSE, include = FALSE}
+
+# install.packages("tidyverse")
+# install.packages("knitr")
+# install.packages("kableExtra")
+# install.packages("growthrates")
+
+library(tidyverse); packageVersion("tidyverse")
+library(knitr); packageVersion("knitr")
+library(kableExtra); packageVersion("kableExtra")
+library(growthrates); packageVersion("growthrates")
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+```  
+  
+* r version: `r getRversion()`
+* RStudio version: `r rstudioapi::versionInfo()$version`
+* r packages:  
+  tidyverse, `r packageVersion("tidyverse")` 
+  knitr, `r packageVersion("knitr")`  
+  kableExtra, `r packageVersion("KableExtra")`  
+  
+### Input files 
+1. Count data from microcosms, filename 'MCosms_II_microscope_counts_all.csv'
+
+```{r input data files, echo = FALSE, include = FALSE}
+# input data files
+# Count data from point-intercept (microscopy)
+counts.fp <- paste0(input.fp, "/MCosms_II_microscope_counts_all.csv") 
+
+#input file
+df <- read.csv(counts.fp)
+
+```
+  
+### Format files  
+1. Replace NAs w/ zeroes (i.e., NAs are below detection values and models require use of numbers)
+2. Re-label 'N+P' as 'NP'
+3. Create a factor1 (N) and factor2 (P) as boolean variables
+4. Reclassify explanatory variables (factor1, factor2, and treatment) as factors with two, two, or four levels respectively
+5. Re-order 'treatment' factor w/ ctrl as first level
+6. Subset by basin
+
+```{r format all data, echo = FALSE, include = FALSE}
+#inspect data structures of input files
+#metadata file
+str(df)
+
+#replace NAs with dummy zeroes
+df.1 <- df %>% replace(is.na(.), 0)
+
+#recode N+P treatment as NP
+df.1 <- df.1 %>%
+  mutate(treatment = replace(treatment, treatment == "N+P", "NP"))
+
+#create boolean variables for each treatment in new columns
+df.1$N <- ifelse(df.1$treatment %in% c("N", "NP"), TRUE, FALSE)
+#
+#create boolean variables for each treatment in new columns
+df.1$P <- ifelse(df.1$treatment %in% c("P", "NP"), TRUE, FALSE)
+#
+#reclassify plate_number, n, and p, as factors
+df.1 <- df.1 %>% 
+  mutate_at(vars(plate_number, treatment, N, P,), factor)
+
+# Reordering group factor levels
+df.1$treatment <- factor(df.1$treatment,      
+                           levels = c("CTRL", "N", "P", "NP"))
+
+#subset by basin
+#bonney
+df.b <- df.1 %>% filter(basin == "Bonney") 
+
+```
+  
+## Run analyses
+### Compute percent cover for primary producers - Bonney
+
+```{r bonney format, echo = FALSE, include = FALSE}
+#remove plates 3 and 11 (spilled and overwatered)
+df.b.1 <- df.b %>% subset(!(plate_number %in% c(3, 11)))
+
+#add up prijmary producer counts across columns for 'primary' surface count
+df.b.1 <- df.b.1 %>% mutate(primary = green_sphere + 
+                          green_dot +
+                          green_branching +
+                          brown_dot + 
+                          green_rope + 
+                          green_patch + 
+                          yellow_patch +
+                          green_filaments + 
+                          moss + 
+                          orange_sphere,
+                        .after = num_counts)
+
+#compute percent primary producer cover
+df.b.1 <- df.b.1 %>% mutate(primary_cover = (primary / num_counts) * 100,
+                        .after = primary)
+
+#compute percent primary producer cover between 0 and 1
+df.b.1 <- df.b.1 %>% mutate(primary_cover_2 = (primary / num_counts),
+                        .after = primary_cover)
+
+#replace NaN with zeroes
+df.b.1 <- df.b.1 %>% mutate_all(~replace(., is.nan(.), 0))
+
+#create vector with days for each plate by date column
+days.b <- rep(c("0", "7", "14", "21", "28", "35", "42", "49", "56", "63", "70"), each = 18)
+
+#join vector to data frame
+df.b.1 <- cbind(df.b.1, days.b)
+
+#recode days from character to integer
+df.b.1$days.b <- as.integer(df.b.1$days.b)
+
+```
+  
+# Growth Models  
+  
+The logistic growth model requires starting parameters.  To offer a quantitatively supported initial growth rate value for the model, we will use a model from 'Growth rates made easy' (Hall et al. 2014) that will compute a rate using log-linear part of the growth curve. Also, an important consideration at this point is that zeros are not compatible with growth models (i.e., something can't come from nothing) and zeroes in this data set are not absolute zeroes anyway, they simply represent below detection limit (i.e. smaller than can be seen w/ the dissecting microscope). So, we will use 'dummy' values of 0.001 to represent very small starting population sizes below detection.  
+  
+## Easy Linear Model
+```{r easylinear model, echo = FALSE, include = FALSE}
+#Set all zeros equivalent to 10-e3
+df.b.1$primary_cover[df.b.1$primary_cover == 0] <- 0.001
+
+# Determine the exponential growth rate of each plate
+#Use easy liner function from 'growthrates' package which is based on Hall et al. (2014). 'h' is the 'width of the window', or how many data points required to compute exponential growth rate.
+L <- all_easylinear(primary_cover ~ days.b | plate_number + treatment + replicate, 
+                    data = df.b.1, 
+                    h = 4, 
+                    quota = 0.95)
+
+#output of linear model for each sample
+summary(L)
+
+#output of model parameters (i.e. starting population size, mumax, lag time)
+coef(L)
+
+#multiple r-squared values for model fit
+rsquared(L)
+```
+  
+\newpage  
+### Diagnostics  
+  
+```{r easylinear model output, echo = FALSE}
+#display all results in data frame format 
+results <- results(L)
+
+#display output
+print(results)
+
+#save as .csv file
+write.csv(results, file = paste0(output4.b.fp, '/BNM_easylinear.csv'))
+
+```
+  
+### Plots  
+  
+### Mumax and Lag grouped by treatment
+```{r easy linear mumax plot, echo = FALSE}  
+#plot maximum growth rate for each plate by treatment
+xyplot(mumax ~ replicate | treatment, data = results,
+       xlab="Replicate",
+       ylab="Maximum Growth Rate- Surface Cover/Day",
+       main="Maximum Specific Growth Rate by Treatment- Bonney Basin")
+
+```
+  
+```{r easy linear lag plot, echo = FALSE}
+#plot lag times for each plate by treatment
+xyplot(lag ~ replicate | treatment, data = results,
+       xlab="Replicate",
+       ylab="Lag Time- # of Days",
+       main="Lag Time by Treatment- Bonney Basin")
+
+```
+  
+### Growth Curve for each microcosm
+```{r easy linear growth curve plots, echo = FALSE}
+#plot
+par(mfrow = c(2, 2))
+plot(L)
+```
+  
+### Growth curve for each microcosm- log scale
+```{r easy linear growth curve plots- log scale, echo = FALSE}
+#Plot log-scale
+par(mfrow = c(2, 2))
+plot(L, log = "y")
+
+```
+ 
+\newpage   
+### Calculate parameter averages by treatment
+```{r easy linear model parameters, echo = FALSE, include = FALSE}
+#calculate max growth rate and carrying capacity mean, sd, se, and 95% confidence interval by treatment for easyfit model
+easyfit_model_mean_se <- results %>%
+  group_by(treatment) %>%
+  summarise_each(funs(mean(., na.rm=T), sd, n = sum(!is.na(.)), se = sd(., na.rm=T)/sqrt(sum(!is.na(.))), ci = sd(., na.rm=T)/sqrt(sum(!is.na(.)))*1.96), mumax:lag)
+
+#establish upper and lower confidence interval
+easyfit_model_mean_se <- easyfit_model_mean_se %>%
+  mutate(mumax.upper.ci = mumax_mean + mumax_ci, 
+         mumax.lower.ci = mumax_mean - mumax_ci,
+         lag.upper.ci = lag_mean + lag_ci, 
+         lag.lower.ci = lag_mean - lag_ci)
+
+#reorder columns
+easyfit_model_mean_se.1 <- easyfit_model_mean_se  %>% select(treatment, mumax_mean, mumax.upper.ci, mumax.lower.ci, mumax_n, lag_mean, lag.upper.ci, lag.lower.ci, lag_n)
+
+#save results of easyfit model as .csv file
+write.csv(easyfit_model_mean_se.1, file = paste0(output4.b.fp, '/BNM_easylinear_summary_parameters.csv'))
+
+```
+   
+```{r kable 1}
+#create table of easy linear model parameters
+knitr::kable(easyfit_model_mean_se.1, booktabs = T, digits = 2, align = "lcccccccc", caption = 'Average model parameters from easy linear model') %>%
+  kable_styling(latex_options = c("striped", "scale_down", "hold_position"), font_size = 12) %>%
+  row_spec(0, bold = T)
+
+```
+  
+## Logistic Growth Model  
+  
+### Model
+```{r logistic growth model, echo = FALSE, include = FALSE}
+#set initial parameters with values from easylinear
+p <- c(y0 = 1e-1, mumax = 0.49 , K = 100)
+
+#set a lower value to avoid output of negative parameters
+lower = c(y0 = 0, mumax = 0, K = 0)
+
+#logistic model
+many_logistic <- all_growthmodels(primary_cover ~ grow_logistic(days.b, parms) | plate_number + treatment,
+                                  data = df.b.1,
+                                  p = p,
+                                  lower = lower, 
+                                  ncores = 1)
+```
+
+```{r logistic growth model output, echo = FALSE, include = FALSE}
+#model output for each microcosm
+print(many_logistic)
+
+#create data frame of model parameters
+many_logistic_res <- results(many_logistic)
+
+#model parameters for each microcosm
+print(many_logistic_res)
+
+#save as .csv file
+write.csv(many_logistic_res, file = paste0(output4.b.fp, '/BNM_logistic_model.csv'))
+```
+  
+### Plots
+```{r logistic growth curve plots, echo = FALSE}
+#plot
+par(mfrow = c(2, 2))
+plot(many_logistic)
+```
+\newpage   
+  
+### Calculate parameter averages by treatment    
+```{r logistic growth model parameters, echo = FALSE, include = FALSE}  
+#remove plates w/ less than 0.90 r2 value for logistic model
+many_logistic_res2 <- many_logistic_res %>% filter(r2 > 0.90)
+
+#calculate max growth rate and carrying capacity mean, sd, se, and 95% confidence interval by treatment for logistic model
+logistic_model_mean_se <- many_logistic_res2 %>%
+  group_by(treatment) %>%
+  summarise_each(funs(mean(., na.rm=T), sd, n = sum(!is.na(.)), se = sd(., na.rm=T)/sqrt(sum(!is.na(.))), ci = sd(., na.rm=T)/sqrt(sum(!is.na(.)))*1.96), mumax:K)
+
+#establish upper and lower confidence interval
+logistic_model_mean_se <- logistic_model_mean_se %>%
+  mutate(K.upper.ci = K_mean + K_ci, 
+         K.lower.ci = K_mean - K_ci,
+         mumax.upper.ci = mumax_mean + mumax_ci,
+         mumax.lower.ci = mumax_mean - mumax_ci)
+
+#reorder so K and mumax columns are separated and treatment is 1st column
+logistic_model_mean_se <- logistic_model_mean_se %>% select(order(colnames(logistic_model_mean_se)))
+
+#reorder, cont.
+logistic_model_mean_se.1 <-  logistic_model_mean_se %>% select(treatment, mumax_mean, mumax.upper.ci, mumax.lower.ci, mumax_n, K_mean, K.upper.ci, K.lower.ci, K_n)
+
+#save results of logistic model as .csv file
+write.csv(logistic_model_mean_se.1, file = paste0(output4.b.fp, '/BNM_logistic_model_summary_parameters.csv'))
+
+```
+
+```{r kable 2}
+#create table logistic growth model parameters
+knitr::kable(logistic_model_mean_se.1, booktabs = T, digits = 2, align = "lcccccccc", caption = 'Average model parameters from logistic growth model') %>%
+  kable_styling(latex_options = c("striped", "scale_down", "hold_position"), font_size = 12) %>%
+  row_spec(0, bold = T)
+
+```
+\newpage  
+## Statistical Models  
+  
+### Comparison of Maximum Growth Rates  
+  
+Comparison between only P and NP treatments, as the only usable models.  
+  
+Generalized Linear Model  
+```{r logistic growth model growth rate comparisons - GLM, echo = FALSE}   
+#subset only treatments with usable growth models
+many_logistic_res3 <- many_logistic_res2 %>% filter(treatment %in% c("P", "NP"))
+
+#GLM for differences in growth rates between groups
+glm.mumax <- glm(mumax ~ treatment, family = gaussian, many_logistic_res3)
+
+#summary glm
+summary(glm.mumax)
+
+#diagnostic plots of model
+par(mfrow = c(2, 2))
+plot(glm.mumax)
+
+#save glm as .txt file
+capture.output(summary(glm.mumax), file = paste0(output4.b.fp, '/BNM_GLM_mumax_summary.txt'))
+
+
+```
+  
+### Comparison of Carrying Capacity 
+  
+Generalized Linear Model  
+```{r logistic growth model carrying capacity comparisons - GLM, echo = FALSE}
+#GLM - growth rates
+glm.K <- glm(K ~ treatment, family = gaussian, many_logistic_res3)
+
+#output of glm
+summary(glm.K)
+
+#diagnostic plots of model
+par(mfrow = c(2, 2))
+plot(glm.K)
+
+#save glm as .txt file
+capture.output(summary(glm.K), file = paste0(output4.b.fp, '/BNM_GLM_K_summary.txt'))
+
+```
+  
+```{r save model parameters for inter-basin comparison, echo = FALSE, include = FALSE}
+#save as R file
+saveRDS(many_logistic_res3, paste0(objects4.b.fp, "/BNM_grow_mod_params.rds"))
+```
+# References
+
+Hall, BG., Acar, H, Nandipati, A and Barlow, M (2014) Growth Rates Made Easy. Mol. Biol. Evol. 31: 232-38, doi: 10.1093/molbev/mst187

@@ -1,0 +1,548 @@
+---
+title: "Nutrient Limitation in the MDV of Antarctica"
+subtitle: "  \n Logistic Growth Model - Inter-basin"
+author: "Adam J. Solon"
+date: "`r Sys.Date()`"
+#output: html_document
+output: 
+  pdf_document:
+    #includes:  
+     # in_header: my_header.txt
+    toc: TRUE
+    fig_width: 8
+    fig_height: 6
+    fig_caption: true
+fontsize: 12pt
+#editor_options: 
+#  chunk_output_type: console
+---
+
+# Script Summary  
+This report quantifies the growth rate and carrying capacity of primary producers from MDV soils using a logistic growth model.  The experiment involved soils from Taylor Valley in the McMurdo Dry Valleys (MDV) of Antarctica and were collected from mountain slopes in one of three lake basins: Bonney(interior), Hoare(intermediate), and Fryxell(coastal).  There are four treatments: CTRL (controls with H2O only), N (nitrogen + H2O only), P (phosphorus + H2O only), and NP (N and P combined + H2O). 
+
+### Steps of this pipeline:  
+1.  Create and organize directories
+2.  Load R packages
+3.  Subset according to basin
+4.  Input files
+5.  Format Files
+6.  Run analyses
+7.  Plot curves  
+8.  Statistics  
+
+```{r, echo = FALSE, include = FALSE}
+# Change identifiers to your system and file naming. 
+user <- "C:/Users/adams" # computer user name
+folder <- "/Desktop/Projects"
+project <- "/MDV_Soils_nutrient_limitation/manuscript1"
+analyses <- "/analyses"
+data  <- "/point_intercept"
+analysis4 <- "/GR_growth_rate"
+ecosystem <- "lab microcosms - Taylor Valley soils" # Define the environment for use in report language.
+project.fp <- paste0(user, folder, project)
+```
+
+# Pipeline
+
+### Set paths and create directories 
+
+```{r set paths for project, echo = FALSE, include = FALSE}
+# First define the project and project folders. 
+
+# Create project directory
+###################################################
+project.fp <- paste0(user, folder, project)
+if (!dir.exists(project.fp)) dir.create(project.fp)
+
+# Create sub-directory for all analyses for project 
+###################################################
+analyses.fp <- paste0(project.fp, analyses)
+if (!dir.exists(analyses.fp)) dir.create(analyses.fp)
+
+# Create sub-directory for data type 
+###################################################
+data.fp <- paste0(analyses.fp, data)
+if (!dir.exists(data.fp)) dir.create(data.fp)
+
+# Create sub-directory for specific analysis 
+###################################################
+analysis4.fp <- paste0(data.fp, analysis4)
+if (!dir.exists(analysis4.fp)) dir.create(analysis4.fp)
+
+# Create sub-directories for analysis 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input.fp <- paste0(analysis4.fp, "/input")
+if (!dir.exists(input.fp)) dir.create(input.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects.fp <- paste0(analysis4.fp, "/objects")
+if (!dir.exists(objects.fp)) dir.create(objects.fp)
+
+# Create directory for 'after' pipeline outputs 
+output.fp <- paste0(analysis4.fp, "/output")
+if (!dir.exists(output.fp)) dir.create(output.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis4.fp) 
+
+```
+
+### Create additional sub-directories by analysis and basin  
+  
+```{r echo = FALSE, include = FALSE}
+# Create sub-directory for Growth Rates (GR) analysis
+###################################################
+analysis4.fp <- paste0(data.fp, analysis4)
+if (!dir.exists(analysis4.fp)) dir.create(analysis4.fp)
+
+# Create sub-directories for GR 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input4.fp <- paste0(analysis4.fp, "/input")
+if (!dir.exists(input4.fp)) dir.create(input4.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects4.fp <- paste0(analysis4.fp, "/objects")
+if (!dir.exists(objects4.fp)) dir.create(objects4.fp)
+
+# Create directory for 'after' pipeline outputs 
+output4.fp <- paste0(analysis4.fp, "/output")
+if (!dir.exists(output4.fp)) dir.create(output4.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis4.fp) 
+
+# Create sub-directories for Bonney basin 
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects4.b.fp <- paste0(objects4.fp, "/bonney")
+if (!dir.exists(objects4.b.fp)) dir.create(objects4.b.fp)
+
+# Create sub-directories for Hoare basin 
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects4.h.fp <- paste0(objects4.fp, "/hoare")
+if (!dir.exists(objects4.h.fp)) dir.create(objects4.h.fp)
+
+# Create sub-directories for Fryxell basin 
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects4.f.fp <- paste0(objects4.fp, "/fryxell")
+if (!dir.exists(objects4.f.fp)) dir.create(objects4.f.fp)
+
+```
+
+### Session Information  
+
+```{r Install and load packages, echo = FALSE, include = FALSE}
+
+# install.packages("tidyverse")
+# install.packages("knitr")
+# install.packages("kableExtra")
+# install.packages("lmtest")
+# install.packages("AICcmodavg")
+# install.packages("emmeans")
+
+library(tidyverse); packageVersion("tidyverse")
+library(knitr); packageVersion("knitr")
+library(kableExtra); packageVersion("kableExtra")
+library(lmtest); packageVersion("lmtest")
+library(AICcmodavg); packageVersion("AICcmodavg")
+library(emmeans); packageVersion("emmeans")
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+```  
+  
+* r version: `r getRversion()`
+* RStudio version: `r rstudioapi::versionInfo()$version`
+* r packages:  
+  tidyverse, `r packageVersion("tidyverse")` 
+  knitr, `r packageVersion("knitr")`  
+  kableExtra, `r packageVersion("KableExtra")`  
+  lmtest, `r packageVersion("lmtest")`   
+  AICcmodavg, `r packageVersion("AICcmodavg")`  
+  emmeans, `r packageVersion("emmeans")`  
+
+### Input files 
+1. Growth models from each basin, filenames 'FXM_grow_mod_params.rds', 'HRM_grow_mod_params.rds', 'BNM_grow_mod_params.rds' from scripts MCosms_II_growth_model_fryxell.Rmd, MCosms_II_growth_model_hoare.Rmd, and MCosms_II_growth_model_bonney.Rmd
+
+```{r input data files, echo = FALSE, include = FALSE}
+# input data files
+# Count data from point-intercept (microscopy)
+gc.b.fp <- paste0(objects4.b.fp, "/BNM_grow_mod_params.rds") 
+gc.h.fp <- paste0(objects4.h.fp, "/HRM_grow_mod_params.rds") 
+gc.f.fp <- paste0(objects4.f.fp, "/FXM_grow_mod_params.rds") 
+
+#input file
+gc.b <- readRDS(gc.b.fp)
+gc.h <- readRDS(gc.h.fp)
+gc.f <- readRDS(gc.f.fp)
+
+```
+  
+### Format files  
+1. Add column with basin for each data frame
+2. Bind data frames by rows
+3. Subset by treatment- P or NP
+
+```{r format all data, echo = FALSE, include = FALSE}
+#add basin column to data frames
+gc.b$basin <- "bonney"
+gc.h$basin <- "hoare"
+gc.f$basin <- "fryxell"
+
+#merge data frames
+gc.all <- rbind(gc.b, gc.h, gc.f)
+
+#treatment as factor
+gc.all$treatment <- as.factor(gc.all$treatment) 
+
+#subset by P treatment
+gc.all.p <- gc.all %>% filter(treatment %in% "P")
+
+#subset by NP treatment
+gc.all.np <- gc.all %>% filter(treatment %in% "NP")
+
+
+```
+  
+## Run analyses
+  
+### Linear Model - Maximum growth rate (mumax) - NP treatments  
+  
+```{r test for differences in NP treatment growth rates, echo=FALSE}
+#lm - growth rates (mumax) for NP treatments across basins
+lm.np.mumax <- lm(mumax ~ basin,  gc.all.np)
+
+#output from model
+summary(lm.np.mumax)
+
+#diagnostics
+plot(lm.np.mumax)
+
+```
+  
+```{r NP null model, echo=FALSE}
+#null model
+null.np.mumax <- lm(mumax ~ 1,  gc.all.np)
+
+#output from null model
+summary(null.np.mumax)
+
+```
+
+```{r test with NP null model, echo=FALSE}
+#test significance relative to null model that assumes no treatment effect
+lrtest(lm.np.mumax, null.np.mumax) ##likelihood-ratio test significant difference betwen null model and treatment model. 
+```
+  
+```{r NP model comparison - mumax, echo=FALSE, include = FALSE}
+#lm
+#second order AICc (small sample size)
+aicC.np.mumax <- AICc(lm.np.mumax, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.np.mumax)
+
+#parameters in model
+aicC.np.mumax.p <- AICc(lm.np.mumax, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.np.mumax.p)
+
+#null
+#second order AICc (small sample size)
+aicC.null.mumax <- AICc(null.np.mumax, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.null.mumax)
+
+#parameters in model
+aicC.null.mumax.p <- AICc(null.np.mumax, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.null.mumax.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.m <- data.frame (Model  = c("lm", "lm.null"),
+                  AICc = c(aicC.np.mumax, aicC.null.mumax),
+                  parameters = c(aicC.np.mumax.p, aicC.null.mumax.p)
+                  )
+```
+  
+```{r kable 1}
+#create table of AIC values
+knitr::kable(aicC.m, booktabs = T, digits = 2, align = "cc", caption = 'Model Comparison with Akaike Information Criterion (AIC)') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+```{r NP fitted model pairwise comparison, echo=FALSE}
+#save as .txt file
+capture.output(summary(lm.np.mumax), file = paste0(output4.fp, '/Inter_basin_NP_mumax_lm_summary.txt'))
+
+#post-hoc test of fitted models
+p.hoc.mumax.np <- test(pairs(emmeans(lm.np.mumax, ~ basin, mode = "link")))
+
+#output
+print(p.hoc.mumax.np)
+
+#save as .csv file
+write.csv(p.hoc.mumax.np, paste0(output4.fp, file = '/Inter_basin_NP_mumax_pairwise.csv'))
+
+```
+  
+### Linear Model - Carrying Capacity (K) - NP treatments  
+  
+```{r test for differences in NP treatment K, echo=FALSE}
+#lm - growth rates (mumax) for NP treatments across basins
+lm.np.K <- lm(K ~ basin,  gc.all.np)
+
+#output from model
+summary(lm.np.K)
+
+#diagnostics
+plot(lm.np.K)
+
+```
+  
+```{r NP null model K, echo=FALSE}
+#null model
+null.np.K <- lm(K ~ 1,  gc.all.np)
+
+#output from null model
+summary(null.np.K)
+
+```
+
+```{r test with NP null model K, echo=FALSE}
+#test significance relative to null model that assumes no treatment effect
+lrtest(lm.np.K, null.np.K) ##likelihood-ratio test significant difference betwen null model and treatment model. 
+```
+  
+```{r NP model comparison K, echo = FALSE, include = FALSE}
+#lm
+#second order AICc (small sample size)
+aicC.np.K <- AICc(lm.np.K, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.np.K)
+
+#parameters in model
+aicC.np.K.p <- AICc(lm.np.K, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.np.K.p)
+
+#null
+#second order AICc (small sample size)
+aicC.null.K <- AICc(null.np.K, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.null.K)
+
+#parameters in model
+aicC.null.K.p <- AICc(null.np.K, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.null.K.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.K <- data.frame (Model  = c("lm", "lm.null"),
+                  AICc = c(aicC.np.K, aicC.null.K),
+                  parameters = c(aicC.np.K.p, aicC.null.K.p)
+                  )
+```
+  
+```{r kable 2}
+#create table of AIC values
+knitr::kable(aicC.K, booktabs = T, digits = 2, align = "cc", caption = 'Model Comparison with Akaike Information Criterion (AIC)') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+```{r fitted model pairwise, echo=FALSE}
+#save as .txt file
+capture.output(summary(lm.np.K), file =  paste0(output4.fp, '/Inter_basin_NP_K_lm_summary.txt'))
+
+#post-hoc test of fitted models
+p.hoc.K.np <- test(pairs(emmeans(lm.np.K, ~ basin, mode = "link")))
+
+#output
+print(p.hoc.K.np)
+
+#save as .csv file
+write.csv(p.hoc.K.np, file = paste0(output4.fp, '/Inter_basin_NP_K_pairwise.csv'))
+
+```
+  
+### Linear Model - Maximum growth rate (mumax) - P treatments  
+  
+```{r test for differences in P treatment growth rates, echo=FALSE}
+#lm - growth rates (mumax) for P treatments across basins
+lm.p.mumax <- lm(mumax ~ basin,  gc.all.p)
+
+#output from model
+summary(lm.p.mumax)
+
+#diagnostics
+plot(lm.p.mumax)
+
+```
+  
+```{r null model, echo=FALSE}
+#null model
+null.p.mumax <- lm(mumax ~ 1,  gc.all.p)
+
+#output from null model
+summary(null.p.mumax)
+
+```
+
+```{r test with null model, echo=FALSE}
+#test significance relative to null model that assumes no treatment effect
+lrtest(lm.p.mumax, null.p.mumax) ##likelihood-ratio test significant difference betwen null model and treatment model. 
+```
+  
+```{r model comparison, echo=FALSE}
+#lm
+#second order AICc (small sample size)
+aicC.p.mumax <- AICc(lm.p.mumax, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.p.mumax)
+
+#parameters in model
+aicC.p.mumax.p <- AICc(lm.p.mumax, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.p.mumax.p)
+
+#null
+#second order AICc (small sample size)
+aicC.null.mumax <- AICc(null.p.mumax, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.null.mumax)
+
+#parameters in model
+aicC.null.mumax.p <- AICc(null.p.mumax, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.null.mumax.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.m <- data.frame (Model  = c("lm", "lm.null"),
+                  AICc = c(aicC.p.mumax, aicC.null.mumax),
+                  parameters = c(aicC.p.mumax.p, aicC.null.mumax.p)
+                  )
+```
+  
+```{r kable 3}
+#create table of AIC values
+knitr::kable(aicC.m, booktabs = T, digits = 2, align = "cc", caption = 'Model Comparison with Akaike Information Criterion (AIC)') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+```{r P fitted model pairwise, echo=FALSE, include = FALSE}
+#save as .txt file
+capture.output(summary(lm.p.mumax), file = paste0(output4.fp, '/Inter_basin_P_mumax_lm_summary.txt'))
+
+```
+  
+### Linear Model - Carrying Capacity (K) - P treatments  
+  
+```{r test for differences in P treatment K, echo=FALSE}
+#lm - growth rates (mumax) for P treatments across basins
+lm.p.K <- lm(K ~ basin,  gc.all.p)
+
+#output from model
+summary(lm.p.K)
+
+#diagnostics
+plot(lm.p.K)
+
+```
+  
+```{r P null model K, echo=FALSE}
+#null model
+null.p.K <- lm(K ~ 1,  gc.all.p)
+
+#output from null model
+summary(null.p.K)
+
+```
+
+```{r P test with null model K, echo=FALSE}
+#test significance relative to null model that assumes no treatment effect
+lrtest(lm.p.K, null.p.K) ##likelihood-ratio test significant difference betwen null model and treatment model. 
+```
+  
+```{r P model comparison K, echo=FALSE}
+#lm
+#second order AICc (small sample size)
+aicC.p.K <- AICc(lm.p.K, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.p.K)
+
+#parameters in model
+aicC.p.K.p <- AICc(lm.p.K, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.p.K.p)
+
+#null
+#second order AICc (small sample size)
+aicC.null.K <- AICc(null.p.K, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.null.K)
+
+#parameters in model
+aicC.null.K.p <- AICc(null.p.K, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.null.K.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.K <- data.frame (Model  = c("lm", "lm.null"),
+                  AICc = c(aicC.p.K, aicC.null.K),
+                  parameters = c(aicC.p.K.p, aicC.null.K.p)
+                  )
+```
+  
+```{r kable 4}
+#create table of AIC values
+knitr::kable(aicC.K, booktabs = T, digits = 2, align = "cc", caption = 'Model Comparison with Akaike Information Criterion (AIC)') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+```{r P fitted model pairwise K, echo=FALSE, include = FALSE}
+#save as .txt file
+capture.output(summary(lm.p.K), file =  paste0(output4.fp, '/Inter_basin_P_K_lm_summary.txt'))
+
+```

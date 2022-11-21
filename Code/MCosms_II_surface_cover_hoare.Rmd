@@ -1,0 +1,953 @@
+---
+title: "Nutrient Limitation in the MDV of Antarctica"
+subtitle: "  \n Hoare Basin Surface Cover Over Time"
+author: "Adam J. Solon"
+date: "`r Sys.Date()`"
+#output: html_document
+output: 
+  pdf_document:
+    #includes:  
+     # in_header: my_header.txt
+    toc: TRUE
+    fig_width: 8
+    fig_height: 6
+    fig_caption: TRUE
+#fontsize: 12pt
+#editor_options: 
+#  chunk_output_type: console
+---
+
+# Script Summary  
+This report plots surface growth of primary producers from Hoare Basin soils (intermediate basin) and uses statistical models to determine if there were differences in surface cover among treatments.  There are four treatment groups from each basin: CTRL (controls with H2O only), N (nitrogen + H2O only), P (phosphorus + H2O only), and NP (N and P combined + H2O). 
+
+### Steps of this pipeline:  
+1.  Create and organize directories
+2.  Load R packages
+4.  Input files
+5.  Format File
+6.  Transform data
+7.  Plot surface cover time series
+8.  Plot maximum surface cover
+9.  Statistics
+
+```{r echo = FALSE, include = FALSE}
+# Change identifiers to your system and file naming. 
+user <- "C:/Users/adams" # computer user name
+folder <- "/Desktop/Projects"
+project <- "/MDV_Soils_nutrient_limitation/manuscript1"
+analyses <- "/analyses"
+data  <- "/point_intercept"
+analysis2 <- "/SC_surface_cover"
+analysis3 <- "/RR_response_ratio"
+ecosystem <- "lab microcosms - Taylor Valley soils" # Define the environment for use in report language.
+project.fp <- paste0(user, folder, project)
+```
+
+# Pipeline
+
+### Set paths and create directories 
+
+```{r set paths for project, echo = FALSE, include = FALSE}
+# First define the project and project folders. 
+
+# Create project directory
+###################################################
+project.fp <- paste0(user, folder, project)
+if (!dir.exists(project.fp)) dir.create(project.fp)
+
+# Create sub-directory for all analyses for project 
+###################################################
+analyses.fp <- paste0(project.fp, analyses)
+if (!dir.exists(analyses.fp)) dir.create(analyses.fp)
+
+# Create sub-directory for data type 
+###################################################
+data.fp <- paste0(analyses.fp, data)
+if (!dir.exists(data.fp)) dir.create(data.fp)
+
+# Create sub-directory for Surface Cover (SC) analysis
+###################################################
+analysis2.fp <- paste0(data.fp, analysis2)
+if (!dir.exists(analysis2.fp)) dir.create(analysis2.fp)
+
+# Create sub-directories for SC 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input2.fp <- paste0(analysis2.fp, "/input")
+if (!dir.exists(input2.fp)) dir.create(input2.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects2.fp <- paste0(analysis2.fp, "/objects")
+if (!dir.exists(objects2.fp)) dir.create(objects2.fp)
+
+# Create directory for 'after' pipeline outputs 
+output2.fp <- paste0(analysis2.fp, "/output")
+if (!dir.exists(output2.fp)) dir.create(output2.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis2.fp) 
+
+# Create further sub-directories by basin
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects2.h.fp <- paste0(objects2.fp, "/hoare")
+if (!dir.exists(objects2.h.fp)) dir.create(objects2.h.fp)
+
+# Create directory for 'after' pipeline outputs 
+output2.h.fp <- paste0(output2.fp, "/hoare")
+if (!dir.exists(output2.h.fp)) dir.create(output2.h.fp)
+
+# Create sub-directory for Response Ratio (RR) analysis
+###################################################
+analysis3.fp <- paste0(data.fp, analysis3)
+if (!dir.exists(analysis3.fp)) dir.create(analysis3.fp)
+
+# Create sub-directory for RR 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input3.fp <- paste0(analysis3.fp, "/input")
+if (!dir.exists(input3.fp)) dir.create(input3.fp)
+
+```
+
+### Session Information  
+
+```{r Install and load packages, echo = FALSE, include = FALSE}
+
+# install.packages("tidyverse")
+# install.packages("knitr")
+# install.packages("kableExtra")
+# install.packages("lattice")
+# install.packages("betareg")
+# install.packages("lmtest")
+# install.packages("AICcmodavg")
+# install.packages("boot")
+# install.packages("emmeans")
+
+library(tidyverse); packageVersion("tidyverse")
+library(knitr); packageVersion("knitr")
+library(kableExtra); packageVersion("kableExtra")
+library(betareg); packageVersion("betareg")
+library(lmtest); packageVersion("lmtest")
+library(AICcmodavg); packageVersion("AICcmodavg")
+library(boot); packageVersion("boot")
+library(emmeans); packageVersion("emmeans")
+
+knitr::opts_chunk$set(echo = FALSE)
+#knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+```  
+  
+* r version: `r getRversion()`
+* RStudio version: `r rstudioapi::versionInfo()$version`
+* r packages:  
+  tidyverse, `r packageVersion("tidyverse")` 
+  knitr, `r packageVersion("knitr")`  
+  kableExtra, `r packageVersion("KableExtra")`  
+  betareg, `r packageVersion("betareg")`  
+  lmtest, `r packageVersion("lmtest")`  
+  AICcmodavg, `r packageVersion("lmtest")`  
+  boot, `r packageVersion("lmtest")`  
+  emmeans, `r packageVersion("emmeans")`  
+  
+### Input file 
+1. Count data from Hoare soil microcosms, filename 'Hoare_counts_percent.txt' an output from script 'MCosms_II_count_processing.Rmd'
+
+```{r input data files, echo = FALSE, include = FALSE}
+# input data files
+# Count data from point-intercept method (microscopy)
+counts.fp <- paste0(input2.fp, "/Hoare_counts_percent.txt") 
+
+#input file
+df <- read.table(counts.fp,  header = T, sep = "\t")
+
+```
+
+### Format file  
+
+```{r echo = FALSE, include = FALSE}
+# Reorder group factor levels
+df$treatment <- factor(df$treatment,      
+                           levels = c("CTRL", "N", "P", "NP"))
+
+#re-assign df as df.1
+df.1 <- df
+
+```
+  
+### Run analyses  
+  
+\newpage  
+  
+# Plots  
+  
+## Surface Cover Over Time  
+  
+```{r echo = FALSE, include = FALSE}
+#ggplot displaying growth by treatment
+gc.plot.b <- ggplot(df.1, aes(x = days.h, y = primary_cover,
+                   group = interaction(replicate, treatment),
+                   colour = treatment)) +
+  geom_point(alpha = 0.7, size = 3.5) +
+  lims(y = c(0, 1)) +
+  labs(x = "Days Since Treatment", 
+       y = "Percent Cover (%)", 
+       title = "Hoare") + 
+  #subtitle = "Surface Cover per Week")+
+  geom_line(linetype = 2, size = .65) +
+  geom_jitter(height = 0, width = .5, show.legend = FALSE)+
+  scale_x_continuous(expand = c(0.1, 1), limits = c(28, 63), breaks = c(28, 46, 63))+
+  scale_y_continuous(expand = c(0, 0.025), limits = c(0, 100), breaks = c(0, 20, 40, 60, 80, 100)) +
+  scale_color_manual(values = c("burlywood4",
+                                "springgreen4",
+                                "burlywood4",
+                                "springgreen4")) +
+  guides(color = "none", fill = "none") +
+  theme_bw() + 
+  theme(plot.title = element_text(size = rel(2.5)), 
+        axis.title.y = element_text(size=24), 
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        strip.text.x = element_text(size = 30),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.y = element_blank()) +#,
+        #plot.margin = margin(t = 0,
+         #                    b = 28,
+          #                   l = 40,
+           #                  r = 10)) +
+  facet_grid(. ~ treatment) 
+
+#save as R file
+saveRDS(gc.plot.b, paste0(objects2.h.fp, "/HRM_surface_cover_plot.rds"))
+
+```
+
+``` {r echo = FALSE, fig.pos = 'h', fig.cap = "Plot of surface cover (%) by treatment for Hoare basin soils.  Counts begin on day 28 and end on day 63 and each dashed line represents a microcosm."}
+#display graph
+plot(gc.plot.b)
+```
+  
+\newpage
+  
+## Maximum Surface Cover  
+  
+### Maximum Surface Cover by Treatment  
+  
+```{r echo = FALSE, include = FALSE}
+#subset out only the largest surface cover achieved for each plate across the entire experiment
+#### Controls
+df.C <- subset(df.1, treatment == "CTRL") %>%
+  group_by(plate_number) %>% 
+  filter(primary_cover_2 == max(primary_cover_2, na.rm = TRUE))
+
+# many equivalent max values for plate 15, remove superfluous values, 
+df.C <- df.C[-c(2, 4, 5, 7:9), ]
+
+#### Nitrogen
+df.N <- subset(df.1, treatment == "N") %>%
+  group_by(plate_number) %>% 
+  filter(primary_cover_2 == max(primary_cover_2, na.rm = TRUE))
+
+#### Phosophorus
+df.P <- subset(df.1, treatment == "P") %>%
+  group_by(plate_number) %>% 
+  filter(primary_cover_2 == max(primary_cover_2, na.rm = TRUE))
+
+# many equivalent max values for plate 15, remove superfluous values, 
+df.P <- df.P[-c(2, 3, 6, 8, 9), ]
+
+#### Nitrogen & Phosphorus
+df.NP <- subset(df.1, treatment == "NP") %>%
+  group_by(plate_number) %>% 
+  filter(primary_cover_2 == max(primary_cover_2, na.rm = TRUE))
+
+#join datafames by rows
+df.2 <- rbind(df.C, df.N, df.P, df.NP)
+
+#save as R file
+saveRDS(df.2, paste0(objects2.h.fp, "/HRM_max_cover.Rds"))
+
+#save as R file
+saveRDS(df.2, paste0(input3.fp, "/HRM_max_cover.Rds"))
+
+#save as .txt file 
+write.table(df.2, file = paste0(output2.h.fp, "/HRM_max_cover.txt"), 
+            sep = "\t", row.names = FALSE, col.names = TRUE)
+
+```
+  
+```{r echo = FALSE, include = FALSE}
+#input r object (max cover data frame) for plotting in graph
+# df.2 <- readRDS(outputs.b.fp, "/HRM_max_cover.Rds")
+
+#boxplots of averaged maximum cover by treatment
+max.box.b <- df.2 %>% 
+  ggplot(aes(x = treatment, y = primary_cover)) +
+  geom_boxplot(color = "black",
+               fill = c('burlywood4', "burlywood4", "springgreen4", "springgreen4"), 
+               alpha = 0.3, 
+               size = 1.0, 
+               outlier.shape = NA) +
+  geom_jitter(width = 0.2, 
+              color = 'grey') +
+  labs(x = "Treatment",
+    y = "Percent Cover (%)"
+  ) +
+  scale_y_continuous(expand = c(0, 0.3), limits = c(0.0, 100.0), breaks=seq(0.0, 100.0, 10.0)) +
+  scale_x_discrete(expand = c(0.04, 0.3)) +
+  guides(color = "none") +
+  theme_classic() +
+  theme(plot.title = element_text(size = rel(2.5)),
+        axis.title.y = element_text(size = 20), 
+        axis.title.x = element_text(size = 20),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18))
+
+#ggplot of max cover per microcosm and grouped by treatment
+max.plot.b <- ggplot() +
+  geom_point(aes(x = replicate, y = primary_cover_2), data = df.2) +
+  scale_y_continuous(expand = c(0, 0.025), limits = c(0, 1.0), breaks = c(0.0, .20, .40, .60, .80, 1.00)) +
+  facet_grid(. ~ treatment, switch = "x") +
+  theme(
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11),
+    axis.title.y = element_text(size = 11),
+    axis.title.x = element_text(size = 11),
+    panel.background = element_rect(fill = "white", colour = NA),
+    panel.border = element_rect(fill = NA, colour = "grey50"),
+    panel.grid.major = element_line(colour = "grey90", size = 0.2),
+    panel.grid.minor = element_line(colour = "grey98", size = 0.5),
+    strip.background = element_rect(fill = "grey80", colour = "grey50"),
+    legend.text = element_text(size = 11),
+    strip.text.x = element_text(size = 11)
+  ) +
+  ylab("Proportion cover") +
+  xlab("Replicate no. in Treatment")
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Plot of average maximum surface cover (%) by treatment for Hoare basin soils."}
+#display
+plot(max.box.b)
+```
+  
+```{r echo=FALSE, include=FALSE}
+#check and set working directory
+setwd("C:/Users/adams/Desktop/Projects/MDV_Soils_nutrient_limitation/manuscript1/analyses/point_intercept/SC_surface_cover/")
+getwd()
+
+#Save as jpg
+jpeg(filename = "output/hoare/max_surface_cover_boxplot.jpeg", 
+     width = 800, 
+     height = 600, 
+     units = "px", 
+     pointsize = 12, 
+     quality = 100, 
+     bg = "white", 
+     res = NA)
+#
+max.box.b
+#
+# Close device
+dev.off()
+```
+  
+\newpage  
+### Maximum Surface Cover for each Microcosm  
+   
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Plot of maximum surface cover for each microcosm grouped by treatment for Hoare basin soils."}
+#display
+plot(max.plot.b)
+```
+  
+\newpage   
+# Statistics  
+  
+## Does treatment explain surface cover growth?  
+  
+## Models  
+  
+```{r echo = FALSE, include = FALSE}
+### Transform data  
+
+# beta regression cab not accept values exact values of 0 or 1 as the response variable.
+#Following recommendations from Cribari-Neto and Zeileis (2010), transform data with following function: 
+transform01 <- function(x) {
+  (x * (length(x) - 1) + 0.5) / (length(x))
+}
+#
+df.2$primary_cover_2_scaled <- transform01(df.2$primary_cover_2)
+#
+```
+  
+### Beta regresion null model  
+  
+```{r echo = FALSE}
+#### beta regression ####
+#beta regression null model
+b.null <- betareg(primary_cover_2_scaled ~ 1, data = df.2)
+
+summary(b.null)
+```
+  
+### Beta regression model  
+  
+```{r echo = FALSE}
+# explanatory variable = 'treatment'
+b.reg <- betareg(primary_cover_2_scaled ~ treatment, data = df.2)
+
+#summary
+summary(b.reg)
+
+```
+  
+### Likelihood-ratio test  
+  
+```{r echo = FALSE}
+#comparison of models using asymptotic likelihood ratio tests, used in comparing nested (generalized) linear models 
+lrt <- lrtest(b.null, b.reg) ##likelihood-ratio test significant difference between null model and treatment model. 
+
+#summary
+print(lrt)
+
+```
+
+### Linear model  
+  
+```{r echo = FALSE}
+#linear model
+l.mod <- lm(primary_cover_2_scaled ~ treatment, data = df.2)
+
+summary(l.mod)
+
+```
+  
+\newpage  
+## Diagnostics  
+### Plots  
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: fitted - raw residuals"}
+#beta regression model- fitted vs. residuals
+plot(fitted(b.reg),
+     residuals(b.reg))
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Linear model: fitted - raw residuals"}
+#linear model- fitted vs. residuals
+plot(fitted(l.mod),
+     residuals(l.mod))
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: observations vs. pearson residuals"}
+#observations vs. pearson residuals
+plot(b.reg, which = 1, type = "pearson")
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: observations vs. deviance residuals"}
+#observations vs. deviance residuals
+plot(b.reg, which = 1, type = "deviance", sub.caption = "")
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: Cook's distance"}
+#Cook's distance (pearson residuals)
+plot(b.reg, which = 2)
+```
+  
+``` {r echo = FALSE, fig.pos = 'h', fig.cap = "Linear Model: Cook's distance"}
+#plot of cook's distance
+plot(l.mod, which = 4)
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: Generalized leverage vs. predicted values"}
+#Generalized leverage vs. predicted values
+plot(b.reg, which = 3, type = "pearson")
+```
+ 
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Linear Model: Scale-Location"}
+#scale location plot
+plot(l.mod, which = 3)
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: pearson residuals vs. linear predictor"}
+#pearson residuals vs. linear predictor
+plot(b.reg, which = 4, type = "pearson")
+```
+  
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Beta regression: half-normal plot (normal quantiles vs. deviance residuals)"}
+#half-normal plot (normal quantiles) vs. deviance residuals
+plot(b.reg, which = 5, type = "deviance", sub.caption = "")
+```
+ 
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Linear Model: Normal Q-Q plot (theoretical quantiles vs. standardized residuals)"}
+#normal Q-Q plot
+plot(l.mod, which = 2)
+```
+  
+\newpage
+  
+## Model Selection  
+  
+### AIC  
+  
+```{r echo = FALSE, include = FALSE}
+#model comparison with Akaike Information Criterion
+aic <- AIC(b.reg, l.mod, b.null) 
+
+#display
+print(aic)
+
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b <- AICc(b.reg, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b)
+
+#parameters in model
+aicC.b.p <- AICc(b.reg, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.l <- AICc(l.mod, return.K = FALSE, second.ord = TRUE)
+
+#display
+print(aicC.l)
+
+#parameters in model
+aicC.l.p <- AICc(l.mod, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.l.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.n <- AICc(b.null, return.K = FALSE, second.ord = TRUE)
+
+#display
+print(aicC.n)
+
+#parameters in model
+aicC.n.p <- AICc(b.null, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.n.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC <- data.frame (Model  = c("beta.regression", "linear.model", "beta.null"),
+                  AICc = c(aicC.b, aicC.l, aicC.n),
+                  parameters = c(aicC.b.p, aicC.l.p, aicC.n.p)
+                  )
+```
+  
+```{r echo = FALSE, include = FALSE}
+#subest columns for use in table for pdf
+aic <- aic %>% rownames_to_column("Model")
+
+#reorder columns
+aic <- aic %>% relocate(AIC, .before = df)
+```
+  
+```{r kable 1}
+#create table of AIC values
+knitr::kable(aic, booktabs = T, digits = 2, align = "ccc", caption = 'Model Comparison with Akaike Information Criterion (AIC)') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+\newpage  
+  
+### AICc  
+  
+```{r kable 2}
+#create table of AICc values
+knitr::kable(aicC, booktabs = T, digits = 2, align = "ccc", caption = 'Model Comparison with  second-order Akaike Information Criterion (AICc), a correction for small sample size') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+###### AIC analysis suggests improved model fit w/ beta regression relative to a basic linear model (i.e. ANOVA) or a null model.   
+  
+\newpage  
+    
+### Beta regression model 
+###### Current beta regression model has fixed precision parameter.  Build model with a precision parameter modeled from explanatory variables (i.e., a variable dispersion beta regression) and compare models.
+  
+```{r echo = FALSE}
+#repeat previous anlyses using a beta regression model that also allows Ï to vary
+b.reg.pp <- betareg(primary_cover_2_scaled ~ treatment | treatment, data = df.2)
+#
+summary(b.reg.pp)
+```
+    
+###### Likelihood ratio test  
+  
+```{r echo = FALSE}
+#likelihood-ratio tests to compare variable dispersion model with fixed-Ï and null models.
+lrt.2 <- lrtest(b.null, b.reg, b.reg.pp)
+
+#display
+print(lrt.2)
+```
+  
+```{r echo = FALSE}
+#Residual plots of b.reg and b.reg.pp
+par(mfrow = c(2, 1), oma = c(0, 0, 0, 0), mar = c(4, 4, 0.2, 0.2))
+plot(residuals(b.reg) ~ fitted(b.reg))
+plot(residuals(b.reg.pp) ~ fitted(b.reg.pp))
+```
+  
+```{r echo = FALSE}
+#estimators of the beta regression model may be biased, particularly when the sample size is small (n = 16 here when using patch-level observations)
+#bias correction
+b.null.bc <- betareg(primary_cover_2_scaled ~ 1, data = df.2, type = "BC")
+b.reg.bc <- betareg(primary_cover_2_scaled ~ treatment, data = df.2, type = "BC")
+b.reg.pp.bc <- update(b.reg.bc, . ~ . | treatment, type = "BC")
+
+#bias reduction
+b.null.br <- betareg(primary_cover_2_scaled ~ 1, data = df.2, type = "BR")
+b.reg.br <- betareg(primary_cover_2_scaled ~ treatment, data = df.2, type = "BR")
+b.reg.pp.br <- update(b.reg.br, . ~ . | treatment, type = "BR")
+
+```
+  
+\newpage  
+### AICc  - Model Comparison
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b <- AICc(b.reg, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b)
+
+#parameters in model
+aicC.b.p <- AICc(b.reg, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.n <- AICc(b.null, return.K = FALSE, second.ord = TRUE)
+
+#display
+print(aicC.n)
+
+#parameters in model
+aicC.n.p <- AICc(b.null, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.n.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.pp <- AICc(b.reg.pp, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.pp)
+
+#parameters in model
+aicC.b.pp.p <- AICc(b.reg.pp, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.pp.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.b.df <- data.frame (Model  = c("beta.regression", "var.disp.beta.reg", "beta.null"),
+                  AICc = c(aicC.b, aicC.b.pp, aicC.n),
+                  parameters = c(aicC.b.p, aicC.b.pp.p, aicC.n.p)
+                  )
+```
+  
+```{r kable 3}
+#create table of AICc values
+knitr::kable(aicC.b.df, booktabs = T, digits = 2, align = "ccc", caption = 'Model Comparison with  second-order Akaike Information Criterion (AICc), a correction for small sample size') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+\newpage  
+### AICc - Models with Bias Correction  
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.bc <- AICc(b.reg.bc, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.bc)
+
+#parameters in model
+aicC.b.bc.p <- AICc(b.reg.bc, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.bc.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.n.bc <- AICc(b.null.bc, return.K = FALSE, second.ord = TRUE)
+
+#display
+print(aicC.n.bc)
+
+#parameters in model
+aicC.n.bc.p <- AICc(b.null.bc, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.n.bc.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.pp.bc <- AICc(b.reg.pp.bc, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.pp.bc)
+
+#parameters in model
+aicC.b.pp.bc.p <- AICc(b.reg.pp.bc, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.pp.bc.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.b.bc.df <- data.frame (Model  = c("beta.regression", "var.disp.beta.reg", "beta.null"),
+                  AICc = c(aicC.b.bc, aicC.b.pp.bc, aicC.n.bc),
+                  parameters = c(aicC.b.bc.p, aicC.b.pp.bc.p, aicC.n.bc.p)
+                  )
+```
+  
+```{r kable 4}
+#create table of AICc values
+knitr::kable(aicC.b.bc.df, booktabs = T, digits = 2, align = "ccc", caption = 'Bias Correction Model Comparison with  second-order Akaike Information Criterion (AICc), a correction for small sample size') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+\newpage  
+### AICc - Models with Bias Reduction  
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.br <- AICc(b.reg.br, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.br)
+
+#parameters in model
+aicC.b.br.p <- AICc(b.reg.br, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.br.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.n.br <- AICc(b.null.br, return.K = FALSE, second.ord = TRUE)
+
+#display
+print(aicC.n.br)
+
+#parameters in model
+aicC.n.br.p <- AICc(b.null.br, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.n.br.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.pp.br <- AICc(b.reg.pp.br, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.pp.br)
+
+#parameters in model
+aicC.b.pp.br.p <- AICc(b.reg.pp.br, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.pp.br.p)
+```
+  
+```{r echo = FALSE}
+#create data frame w/ AICc results
+aicC.b.br.df <- data.frame (Model  = c("beta.regression", "var.disp.beta.reg", "beta.null"),
+                  AICc = c(aicC.b.br, aicC.b.pp.br, aicC.n.br),
+                  parameters = c(aicC.b.br.p, aicC.b.pp.br.p, aicC.n.br.p)
+                  )
+```
+  
+```{r kable 5}
+#create table of AICc values
+knitr::kable(aicC.b.br.df, booktabs = T, digits = 2, align = "ccc", caption = 'Bias Reduction Model Comparison with  second-order Akaike Information Criterion (AICc), a correction for small sample size') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+\newpage  
+###### Likelihood ratio tests comparing null, beta regression, and variable dispersion beta regression non-corrected, bias correction, and bias reduction
+  
+```{r echo = FALSE}
+#likelihood ratio tests
+lrtest(b.null, b.reg, b.reg.pp)
+lrtest(b.null.bc, b.reg.bc, b.reg.pp.bc)
+lrtest(b.null.br, b.reg.br, b.reg.pp.br)
+```
+  
+###### Model Summaries of variable dispersion beta regression with bias correction or reduction, or non-corrected model
+```{r echo = FALSE}
+#summary of model statistics
+summary(b.reg.bc)
+summary(b.reg.br)
+summary(b.reg)
+
+```
+  
+Final model selection using the principle of parsimony is the beta regression without correction. There was increased surface cover of N and NP treatments as compared to CTRL. Follow with a Post Hoc test for pairwise comparison of fitted model using estimated marginal means.   
+
+```{r echo=FALSE}
+#save as .txt file
+capture.output(summary(b.reg), file = paste0(output2.h.fp, '/HRM_varDisp_beta_regression_summary.txt'))
+```
+  
+###### Post Hoc test  
+  
+```{r echo = FALSE}
+#post-hoc tests to identify which pairwise contrasts of treatments levels are significant
+p.hoc <- test(pairs(emmeans(b.reg, ~ treatment, mode = "link")))
+
+#display
+print(p.hoc)
+
+#save as .csv file
+write.csv(p.hoc, file = paste0(output2.h.fp, '/HRM_varDisp_betaReg_pairwise_test.csv'))
+```
+  
+\newpage  
+  
+## Is there an interaction effect between factors (i.e., factor 1: nitrogen, and factor 2; phosphorus)  
+  
+## Models  
+```{r echo = FALSE}
+#model with explanatory variables = factor 1 (N), factor 2 (P) for interaction effects
+b.reg.f <- betareg(primary_cover_2_scaled ~ N * P, data = df.2)
+
+#summary
+summary(b.reg.f)
+
+```
+  
+```{r echo = FALSE}
+#model with explanatory variables = factor 1 (N), factor 2 (P) for interaction effects
+b.reg.f.pp <- betareg(primary_cover_2_scaled ~ N * P | N * P, data = df.2)
+
+#summary
+summary(b.reg.f.pp)
+
+```
+  
+```{r echo = FALSE}
+#Residual plots of b.reg and b.reg.pp
+par(mfrow = c(2, 1), oma = c(0, 0, 0, 0), mar = c(4, 4, 0.2, 0.2))
+plot(residuals(b.reg.f) ~ fitted(b.reg.f))
+plot(residuals(b.reg.f.pp) ~ fitted(b.reg.f.pp))
+```
+ 
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.f <- AICc(b.reg.f, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.f)
+
+#parameters in model
+aicC.b.f.p <- AICc(b.reg.f, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.f.p)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#second order AICc (small sample size)
+aicC.b.pp.f <- AICc(b.reg.f.pp, return.K = FALSE, second.ord = TRUE) 
+
+#display
+print(aicC.b.pp.f)
+
+#parameters in model
+aicC.b.pp.p.f <- AICc(b.reg.f.pp, return.K = TRUE, second.ord = TRUE)
+
+#display
+print(aicC.b.pp.p.f)
+```
+  
+```{r echo = FALSE, include = FALSE}
+#create data frame w/ AICc results
+aicC.b.f.df <- data.frame (Model  = c("beta.regression", "var.disp.beta.reg"),
+                  AICc = c(aicC.b.f, aicC.b.pp.f),
+                  parameters = c(aicC.b.f.p, aicC.b.pp.p.f)
+                  )
+```
+  
+```{r kable 6}
+#create table of AICc values
+knitr::kable(aicC.b.f.df, booktabs = T, digits = 2, align = "cc", caption = 'Model Comparison with  second-order Akaike Information Criterion (AICc), a correction for small sample size') %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 14) %>%
+  row_spec(0, bold = T)
+
+```
+  
+Model selection using the principle of parsimony provides evidence there was an interaction effect between the N and P treatments. Follow with a Post Hoc test for pairwise comparison of fitted model.  
+
+```{r echo=FALSE}
+#save as .txt file
+capture.output(summary(b.reg.f), file = paste0(output2.h.fp, '/HRM_varDisp_beta_regression_interaction_summary.txt'))
+```
+  
+###### Post Hoc test  
+  
+```{r echo = FALSE}
+#post-hoc test of model to identify which pairwise contrasts of treatments levels are significant
+p.hoc.f <- test(pairs(emmeans(b.reg.f, ~ N * P, mode = "link")))
+
+#display
+print(p.hoc.f)
+
+#save as .csv file
+write.csv(p.hoc.f, file = paste0(output2.h.fp, '/HRM_varDisp_betaReg_interaction_pairwise_test.csv'))
+```
+ 
+```{r echo = FALSE, fig.pos = 'h', fig.cap = "Interaction plot between N and P factors for Hoare basin soils."}
+#display interaction
+emmip(b.reg.f, P ~ N)
+```
+  
+# References
+  
+Cribari-Neto, F., & Zeileis, A. (2010). Beta regression in R. Journal of statistical software, 34, 1-24.  

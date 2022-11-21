@@ -1,0 +1,605 @@
+---
+title: "Nutrient Limitation in the MDV of Antarctica"
+subtitle: "  \n Hoare Basin Response Ratios"
+author: "Adam J. Solon"
+date: "`r Sys.Date()`"
+#output: html_document
+output: 
+  pdf_document:
+    #includes:  
+     # in_header: my_header.txt
+    toc: TRUE
+    fig_width: 8
+    fig_height: 6
+    fig_caption: TRUE
+#fontsize: 12pt
+#editor_options: 
+#  chunk_output_type: console
+---
+
+# Script Summary  
+This report quantifies the response of the growth of primary producers from nutrient enrichments in Hoare Basin soils compared to the growth of the controls (i.e. no nutrients added). There are four treatment groups from each basin: CTRL (controls with H2O only), N (nitrogen + H2O only), P (phosphorus + H2O only), and NP (N and P combined + H2O). Response ratios provide a quantitative effect size metric that allows for comparisons within and across basins.
+
+### Steps of this pipeline:  
+1.  Create and organize directories
+2.  Load R packages
+3.  Input files
+4.  Format File
+5.  Run analyses
+6.  Statistics
+7.  Plot  
+  
+```{r echo = FALSE, include = FALSE}
+# Change identifiers to your system and file naming. 
+user <- "C:/Users/adams" # computer user name
+folder <- "/Desktop/Projects"
+project <- "/MDV_Soils_nutrient_limitation/manuscript1"
+analyses <- "/analyses"
+data  <- "/point_intercept"
+analysis3 <- "/RR_response_ratio"
+ecosystem <- "lab microcosms - Taylor Valley soils" # Define the environment for use in report language.
+project.fp <- paste0(user, folder, project)
+```
+
+# Pipeline
+
+### Set paths and create directories 
+
+```{r set paths for project, echo = FALSE, include = FALSE}
+# First define the project and project folders. 
+
+# Create project directory
+###################################################
+project.fp <- paste0(user, folder, project)
+if (!dir.exists(project.fp)) dir.create(project.fp)
+
+# Create sub-directory for all analyses for project 
+###################################################
+analyses.fp <- paste0(project.fp, analyses)
+if (!dir.exists(analyses.fp)) dir.create(analyses.fp)
+
+# Create sub-directory for data type 
+###################################################
+data.fp <- paste0(analyses.fp, data)
+if (!dir.exists(data.fp)) dir.create(data.fp)
+
+# Create sub-directory for Response Ratio (RR) analysis
+###################################################
+analysis3.fp <- paste0(data.fp, analysis3)
+if (!dir.exists(analysis3.fp)) dir.create(analysis3.fp)
+
+# Create sub-directories for RR 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input3.fp <- paste0(analysis3.fp, "/input")
+if (!dir.exists(input3.fp)) dir.create(input3.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects3.fp <- paste0(analysis3.fp, "/objects")
+if (!dir.exists(objects3.fp)) dir.create(objects3.fp)
+
+# Create directory for 'after' pipeline outputs 
+output3.fp <- paste0(analysis3.fp, "/output")
+if (!dir.exists(output3.fp)) dir.create(output3.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis3.fp) 
+
+# Create further sub-directories by basin
+###################################################
+
+# Create directory for 'within' pipeline R objects 
+objects3.h.fp <- paste0(objects3.fp, "/hoare")
+if (!dir.exists(objects3.h.fp)) dir.create(objects3.h.fp)
+
+# Create directory for 'after' pipeline outputs 
+output3.h.fp <- paste0(output3.fp, "/hoare")
+if (!dir.exists(output3.h.fp)) dir.create(output3.h.fp)
+
+```
+
+### Session Information  
+
+```{r Install and load packages, echo = FALSE, include = FALSE}
+
+# install.packages("tidyverse")
+# install.packages("knitr")
+# install.packages("kableExtra")
+
+library(tidyverse); packageVersion("tidyverse")
+library(knitr); packageVersion("knitr")
+library(kableExtra); packageVersion("kableExtra")
+library(emmeans); packageVersion("emmeans")
+
+knitr::opts_chunk$set(echo = FALSE)
+#knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+```  
+  
+* r version: `r getRversion()`
+* RStudio version: `r rstudioapi::versionInfo()$version`
+* r packages:  
+  tidyverse, `r packageVersion("tidyverse")` 
+  knitr, `r packageVersion("knitr")`  
+  kableExtra, `r packageVersion("KableExtra")`  
+  emmeans, `r packageVersion("emmeans")`
+   
+  
+### Input file 
+1. Maxmimum surface growth data from Hoare soil microcosms, filename '/HRM_max_cover.Rds' an output from script 'MCosms_II_surface_cover_hoare.Rmd'  
+
+```{r input data files, echo = FALSE, include = FALSE}
+# input data files
+# Count data from point-intercept method (microscopy)
+counts.fp <- paste0(input3.fp, "/HRM_max_cover.Rds") 
+
+#input file
+df <- readRDS(counts.fp)
+
+```
+  
+### Format file  
+
+```{r echo = FALSE, include = FALSE}
+#reclassify plate_number and treatment as factors
+df <- df %>% 
+  mutate_at(vars(plate_number, N, P, treatment), factor)
+
+# Reorder group factor levels
+df$treatment <- factor(df$treatment,      
+                           levels = c("CTRL", "N", "P", "NP"))
+
+#subset controls
+df.C <- subset(df, treatment == "CTRL") %>%
+  dplyr::select(plate_number, treatment, primary_cover)
+
+#subset N
+df.N <- subset(df, treatment == "N") %>%
+  dplyr::select(plate_number, treatment, primary_cover)
+
+#subset P
+df.P <- subset(df, treatment == "P") %>%
+  dplyr::select(plate_number, treatment, primary_cover)
+
+#subset NP
+df.NP <- subset(df, treatment == "NP") %>%
+  dplyr::select(plate_number, treatment, primary_cover)
+
+```
+  
+### Run analyses  
+  
+# Statistics  
+  
+## Summary
+#Control  
+```{r echo = FALSE, include = FALSE}
+#transform response variable with natural log
+df.C$log <- log(df.C$primary_cover)  #ln of response variable
+#address zeroes in dataset
+df.C['log'][df.C['log'] == -Inf] <- 0
+
+#compute the mean, standard deviation, sample size, standard error, and upper and lower 95% confidence intervals
+C.mean <- mean(df.C$log)  
+C.sd <- sd(df.C$log)  
+C.size <- length(df.C$log) #number of replicates in treatment
+C.se <- C.sd/sqrt(C.size) #standard error of the mean
+C.cil <- C.mean - (C.se * 1.96) #lower bound of 95% confidence interval
+C.ciu <- C.mean + (C.se * 1.96) #upper bound of 95% confidence interval
+
+#join dataframe of vectors <mean, sd, se, ci>
+dat.C <- data.frame(mean = C.mean, sd = C.sd, n= C.size, se = C.se, ci.low = C.cil, cu.up = C.ciu)
+dat.C
+
+#add column for treatment
+dat.C$treatment <- "CTRL"
+
+```
+  
+#Nitrogen
+```{r echo = FALSE, include = FALSE}
+#transform response variable with natural log
+df.N$log <- log(df.N$primary_cover)  #ln of response variable
+
+#compute the mean, standard deviation, sample size, standard error, and upper and lower 95% confidence intervals
+N.mean <- mean(df.N$log)  
+N.sd <- sd(df.N$log)  
+N.size <- length(df.N$log) #number of replicates in treatment
+N.se <- N.sd/sqrt(N.size) #standard error of the mean
+N.cil <- N.mean - (N.se * 1.96) #lower bound of 95% confidence interval
+N.ciu <- N.mean + (N.se * 1.96) #upper bound of 95% confidence interval
+
+#join dataframe of vectors <mean, sd, se, ci>
+dat.N <- data.frame(mean = N.mean, sd = N.sd, n= N.size, se = N.se, ci.low = N.cil, cu.up = N.ciu)
+dat.N
+
+#add column for treatment
+dat.N$treatment <- "N"
+
+```
+  
+#Phosphorus
+```{r echo = FALSE, include = FALSE}
+#transform response variable with natural log
+df.P$log <- log(df.P$primary_cover)  #ln of response variable
+
+#address zeroes in dataset
+df.P['log'][df.P['log'] == -Inf] <- 0 #change -infinity value to zero
+
+#compute the mean, standard deviation, sample size, standard error, and upper and lower 95% confidence intervals
+P.mean <- mean(df.P$log)  
+P.sd <- sd(df.P$log)  
+P.size <- length(df.P$log) #number of replicates in treatment
+P.se <- P.sd/sqrt(P.size) #standard error of the mean
+P.cil <- P.mean - (P.se * 1.96) #lower bound of 95% confidence interval
+P.ciu <- P.mean + (P.se * 1.96) #upper bound of 95% confidence interval
+
+#join dataframe of vectors <mean, sd, se, ci>
+dat.P <- data.frame(mean = P.mean, sd = P.sd, n= P.size, se = P.se, ci.low = P.cil, cu.up = P.ciu)
+dat.P
+
+#add column for treatment
+dat.P$treatment <- "P"
+
+```
+  
+#Nitrogen and Phosphorus
+```{r echo = FALSE, include = FALSE}
+#transform response variable with natural log
+df.NP$log <- log(df.NP$primary_cover)  #ln of response variable
+
+#compute the mean, standard deviation, sample size, standard error, and upper and lower 95% confidence intervals
+NP.mean <- mean(df.NP$log)  
+NP.sd <- sd(df.NP$log)  
+NP.size <- length(df.NP$log) #number of replicates in treatment
+NP.se <- NP.sd/sqrt(NP.size) #standard error of the mean
+NP.cil <- NP.mean - (NP.se * 1.96) #lower bound of 95% confidence interval
+NP.ciu <- NP.mean + (NP.se * 1.96) #upper bound of 95% confidence interval
+
+#join dataframe of vectors <mean, sd, se, ci>
+dat.NP <- data.frame(mean = NP.mean, sd = NP.sd, n= NP.size, se = NP.se, ci.low = NP.cil, cu.up = NP.ciu)
+dat.NP
+
+#add column for treatment
+dat.NP$treatment <- "NP"
+
+```
+  
+```{r echo = FALSE, include = FALSE}
+#Combine data frames
+dat.all <- rbind(dat.N, dat.P, dat.NP, dat.C)
+dat.all
+
+#save as csv file
+write.csv(dat.all, paste0(output3.h.fp, '/HRM_summary_statistics.csv'))
+
+```
+  
+```{r echo = FALSE, include = FALSE}
+#Combine data frames
+df.all <- rbind(df.C, df.N, df.P, df.NP)
+df.all
+
+#Save as R file
+saveRDS(df.all, paste0(objects3.h.fp, "/HRM_df_all.rds"))
+
+##save as .csv file
+write.csv(df.all, file = paste0(output3.h.fp, '/HRM_summary_log_values.csv'))
+
+```
+  
+The mean of the ln values for treatment C `r dat.C$mean`  
+The mean of the ln values for treatment N `r dat.N$mean`  
+The mean of the ln values for treatment P `r dat.P$mean`  
+The mean of the ln values for treatment NP `r dat.NP$mean`   
+  
+Response Ratios:  
+  
+N - C = `r dat.N$mean - dat.C$mean`  
+P - C = `r dat.P$mean - dat.C$mean`  
+NP - C = `r dat.NP$mean - dat.C$mean`  
+(N-C)+(P-C) = `r (dat.N$mean - dat.C$mean) + (dat.P$mean - dat.C$mean)`  
+  
+## Inferential  
+Linear model  
+```{r echo = FALSE}
+#linear model
+lm.LRR <- lm(log ~ treatment, data = df.all)
+
+#model output
+summary(lm.LRR)
+```
+  
+Pairwise comparison (estimated marginal means)  
+```{r echo = FALSE}
+#post hoc pairwise comparison of fitted model
+pairs(emmeans(lm.LRR, ~ treatment))
+
+#save summary as .txt file
+capture.output(summary(lm.LRR), file = paste0(output3.h.fp, "/HRM_lmLRR_summary.txt"))
+
+#save pairwise test of fitted model (estimated marginal means) as .txt file
+capture.output(pairs(emmeans(lm.LRR, ~ treatment)), file = paste0(output3.h.fp, "/HRM_lmLRR_pairwise.txt"))
+
+```
+  
+```{r echo = FALSE, include = FALSE}
+#check that model estimate is the mean lnN - mean lnC
+dat.N$mean - dat.C$mean
+
+#check that model estimate is the mean lnP - mean lnC
+dat.P$mean - dat.C$mean
+
+#check that model estimate is the mean lnNP - mean lnC
+dat.NP$mean - dat.C$mean
+```
+  
+Check estimates of model to ensure they are the same as the response ratio calculations (i.e., mean[ln X] - mean[ln C]).  
+  
+N - C = `r dat.N$mean - dat.C$mean`  
+P - C = `r dat.P$mean - dat.C$mean`  
+NP - C = `r dat.NP$mean - dat.C$mean`  
+  
+```{r echo = FALSE, include = FALSE}
+#extract N treatment estimate (mean), standard error, and upper and lower confidence intervals from summary output
+est <- coef(lm.LRR)[2]
+se <- summary(lm.LRR)$coef[2, 2]
+lcl <- (est - 1.96*se)
+ucl <- (est + 1.96*se) 
+
+#join vectors in in data frame
+LRRn <- data.frame(est, se, lcl, ucl)
+LRRn
+
+#extract P treatment estimate (mean), standard error, and upper and lower confidence intervals from summary output
+est <- coef(lm.LRR)[3]
+se <- summary(lm.LRR)$coef[3, 2]
+lcl <- (est - 1.96*se)
+ucl <- (est + 1.96*se) 
+
+##join vectors in in data frame
+LRRp <- data.frame(est, se, lcl, ucl)
+LRRp
+
+#extract NP treatment estimate (mean), standard error, and upper and lower confidence intervals from summary output
+est <- coef(lm.LRR)[4]
+se <- summary(lm.LRR)$coef[4, 2]
+lcl <- (est - 1.96*se)
+ucl <- (est + 1.96*se) 
+
+##join vectors in in data frame
+LRRnp <- data.frame(est, se, lcl, ucl)
+LRRnp
+
+#add treatment column
+LRRn$treatment <- c("N")
+LRRp$treatment <- c("P")
+LRRnp$treatment <- c("NP")
+
+#Combine data frames
+df.LRR <- rbind(LRRn, LRRp, LRRnp)
+df.LRR
+
+#save as .csv file
+write.csv(df.LRR, file = paste0(output3.h.fp, '/HRM_dfLRR_summary_statistics.csv'))
+```
+  
+```{r echo = FALSE, include = FALSE}
+#interaction plot
+#add new row for baseline- control
+ctrl <- c(0.0, 0.0, 0.0, 0.0, "C")
+
+#join vector with data frame
+df.LRR <- rbind(ctrl, df.LRR)
+df.LRR
+
+#add row name for control row
+row.names(df.LRR)[1] <- "TreatmentC"  
+
+#create funtion to check or numeric 
+is_all_numeric <- function(x) {
+  !any(is.na(suppressWarnings(as.numeric(na.omit(x))))) & is.character(x)
+}
+
+#use function to change to numeric
+df.LRR <- df.LRR %>% 
+  mutate_if(is_all_numeric, as.numeric)
+
+#round off LRR to two digits
+df.LRR <- df.LRR %>% 
+  mutate_if(is.numeric, round, digit = 3)
+
+#add new columns by treatment factors
+df.LRR$Nitrogen <- c("-N", "+N", "-N", "+N")
+df.LRR$Phosphorus <- c("-P", "-P", "+P", "+P")
+
+#reclassify treatment as factor with four levels
+df.LRR$treatment <- as.factor(df.LRR$treatment)
+
+#display
+print(df.LRR)
+
+#save as R file
+saveRDS(df.LRR, paste0(objects3.h.fp, "/HRM_dfLRR.rds"))
+
+```
+  
+\newpage
+  
+# Plot  
+
+```{r echo = FALSE, include = FALSE}
+#Restore dfLRR
+#df.LRR <- readRDS(objects3.f.fp, "HRM_dfLRR.rds")
+
+#plot
+i.plot.h <- df.LRR %>% 
+  ggplot(aes(x = Nitrogen, y=  est, 
+             color = Phosphorus, 
+             label = treatment)) +
+  geom_line(size = 1.2, 
+            aes(group = Phosphorus), 
+            linetype = "twodash") +
+  geom_point(size = 5.0, 
+             alpha=0.7, 
+             shape = 21, 
+             fill = "black") +
+  geom_errorbar(aes(ymin = lcl,
+                    ymax = ucl),
+                width = 0.03,
+                size = 0.75,
+                color = "grey") +
+  geom_label(aes(x = 2.06, y = 1.85,
+                 label = "N"),
+             stat = "unique",
+             fontface = "bold",
+             size = 10, 
+             color = "white", 
+             fill = "burlywood4") +
+  geom_label(aes(x = 0.95, y = 0.68,
+                 label = "P"),
+             stat = "unique",
+             fontface = "bold", 
+             size = 10, 
+             color = "white", 
+             fill = "springgreen4") +
+  geom_label(aes(x = 2.08, y = 3.8,
+                 label = "NP"),
+             stat = "unique",
+             fontface = "bold", 
+             size = 10, 
+             color = "white", 
+             fill = "springgreen4") +
+  geom_label(aes(x = 1, y = -0.2,
+                 label = "C"),
+             stat = "unique",
+             fontface = "bold", 
+             size = 10, 
+             color = "white", 
+             fill = "burlywood4") +
+  labs(
+    x = "Nitrogen",
+    y = "lnRR "
+  ) +
+  scale_y_continuous(expand = c(0.01, 0.05), limits = c(-0.75, 4.50), breaks=seq(-0.75, 4.50, 0.75)) +
+  scale_x_discrete(expand = c(0, 0.3)) +
+  scale_color_manual(values = c("#999999",
+                                "#333333")) +
+  scale_fill_manual(values=c("burlywood4",
+                             "burlywood4",
+                             "springgreen4",
+                             "springgreen4")) + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "red", size = 1.2) +
+  geom_hline(yintercept = 2.49, linetype="dashed", color = "blue", size = 1.2) +
+  guides(color = "none", fill = "none") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 35), 
+        axis.title.x = element_text(size = 30),
+        axis.text.x = element_text(size = 25),
+        axis.title.y = element_text(size = 30),
+        axis.text.y = element_text(size = 25),
+        axis.ticks.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank())
+
+```
+  
+``` {r echo = FALSE, fig.pos = 'h', fig.cap = "Interaction plot between N and P of response ratios of nutrient enrichments vs. controls in Hoare basin soils. Red dashed line represents control and blue dashed line indicates an additive."}
+#display graph
+plot(i.plot.h)
+```
+  
+```{r echo=FALSE, include=FALSE}
+#check and set working directory
+setwd("C:/Users/adams/Desktop/projects/MDV_Soils_nutrient_limitation/manuscript1/analyses/point_intercept/RR_response_ratio/")
+getwd()
+
+#Save as jpg
+jpeg(filename = "output/hoare/HRM_response_ratio_interaction_plot.jpeg", 
+     width = 800, 
+     height = 600, 
+     units = "px", 
+     pointsize = 12, 
+     quality = 100, 
+     bg = "white", 
+     res = NA)
+#
+i.plot.h
+#
+# Close device
+dev.off()
+```
+
+```{r echo = FALSE, include = FALSE}
+#plot for manuscript figure
+i.plot.h.m <- df.LRR %>% 
+  ggplot(aes(x = Nitrogen, y=  est, 
+             color = Phosphorus, 
+             label = treatment)) +
+  geom_line(size = 1.2, 
+            aes(group = Phosphorus), 
+            linetype = "twodash") +
+  geom_point(size = 5.0, 
+             alpha = 0.7, 
+             shape = 21, 
+             fill = "black") +
+  geom_errorbar(aes(ymin = lcl,
+                    ymax = ucl),
+                width = 0.03,
+                size = 0.75,
+                color = "grey") +
+  geom_label(aes(fill = factor(treatment)), 
+             colour = "white", 
+             fontface = "bold", 
+             size = 14, 
+             nudge_y = 0.175,
+             nudge_x = -0.19) +
+  labs(
+    title = "Hoare",
+    #subtitle = paste0("Interaction between Nitrogen and Phosphorus Enrichments"),
+    x = "Nitrogen",
+    y = "lnRR "
+  ) +
+  scale_y_continuous(expand = c(0.01, 0.05), limits = c(-0.75, 4.50), breaks=seq(-0.75, 4.50, 0.75)) +
+  scale_x_discrete(expand = c(0, 0.3)) +
+  scale_color_manual(values = c("#999999",
+                                "#333333")) +
+  scale_fill_manual(values=c("burlywood4",
+                             "springgreen4",
+                             "springgreen4",
+                             "burlywood4")) + 
+  geom_hline(yintercept = 0, linetype="dashed", color = "red", size = 1.2) +
+  geom_hline(yintercept = 2.49, linetype="dashed", color = "blue", size = 1.2) +
+  guides(color = "none", fill = "none") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 40), 
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 35),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.margin = margin(l = 80, # Left margin
+                             r = 5,
+                             b = 5,  # bottom margin
+                             t = 10)) 
+
+#save as R file
+saveRDS(i.plot.h.m, paste0(objects3.h.fp, "/HRM_lnRR_plot_figure3.rds"))
+```
+  
+## Is there single limitation or co-limitation?  If co-limitation, what type (e.g. super-additive, additive, or sub-additive)?   
+  
+The results suggest co-limitation and of super-additive (or synergistic) type.  
+  
+RRn + RRp = `r (dat.N$mean - dat.C$mean) + (dat.P$mean - dat.C$mean)`  
+  
+RRnp = `r dat.NP$mean - dat.C$mean`  
