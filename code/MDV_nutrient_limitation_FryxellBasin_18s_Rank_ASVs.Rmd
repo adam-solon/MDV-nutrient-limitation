@@ -1,0 +1,530 @@
+---
+title: "MDV Nutrient Limitation Rank of ASVs by Basin-Treatment"
+author: "Adam Solon"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+<h1 align = "center" > Top 10 ASVs by relative abundance (%) </h1>
+&nbsp;  
+&nbsp;    
+
+### Script Summary  
+This script determines the top 10 Ampicon Sequence Variants (ASVs) for each level of a factor (e.g., treatments in an experiment, habitats in a local area). To run this script you will need the output data frame from DADA2 that includes ASV#, sequence counts, and taxonomic assignment.
+
+##### Ten steps to running this pipeline:  
+1.  Organizing and formatting files
+2.  Subsetting according to basin
+
+
+```{r, echo = FALSE, include = FALSE}
+# Change identifiers to your system and file naming. 
+user <- "C:/Users/adams" # computer user name
+folder <- "/Desktop/projects"
+project <- "/MDV_Soils_nutrient_limitation/manuscript1"
+analyses <- "/analyses"
+data  <- "/dna_seq/amplicons"
+analysis2 <- "/RA_relative_abundance/18S"
+ecosystem <- "lab microcosms - Taylor Valley soils" # Define the environment for use in report language.
+project.fp <- paste0(user, folder, project)
+```
+
+```{r Install and load packages, echo = FALSE, include = FALSE}
+
+# install.packages("tidyverse")
+# install.packages("knitr")
+# install.packages("kableExtra")
+# install.packages("plotly")
+# install.packages("stringr")
+
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(stringr)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+### Step 1: Organize project directory, input files, and format
+
+The first step to running this pipeline is to organize folders and identify file paths. This keeps everything organized and helps further down the pipeline in retrieving and saving results in a reliable location. 
+
+```{r set paths for project}
+# First define the project and project folders. 
+
+# Create project directory
+###################################################
+project.fp <- paste0(user, folder, project)
+if (!dir.exists(project.fp)) dir.create(project.fp)
+
+# Create sub-directory for all analyses for project 
+###################################################
+analyses.fp <- paste0(project.fp, analyses)
+if (!dir.exists(analyses.fp)) dir.create(analyses.fp)
+
+# Create sub-directory for data type 
+###################################################
+data.fp <- paste0(analyses.fp, data)
+if (!dir.exists(data.fp)) dir.create(data.fp)
+
+# Create sub-directory for specific analysis 
+###################################################
+analysis2.fp <- paste0(data.fp, analysis2)
+if (!dir.exists(analysis2.fp)) dir.create(analysis2.fp)
+
+# Create sub-directories for analysis 
+###################################################
+
+# Create directory for 'before' pipeline inputs
+input.fp <- paste0(analysis2.fp, "/input")
+if (!dir.exists(input.fp)) dir.create(input.fp)
+
+# Create directory for 'within' pipeline R objects 
+objects.fp <- paste0(analysis2.fp, "/objects")
+if (!dir.exists(objects.fp)) dir.create(objects.fp)
+
+# Create directory for 'after' pipeline outputs 
+output.fp <- paste0(analysis2.fp, "/output")
+if (!dir.exists(output.fp)) dir.create(output.fp)
+
+# Check for the folders here as a sanity check. Should see "Input" and "Objects" if starting from scratch.
+list.files(analysis2.fp) 
+```
+
+```{r set paths for objects and output by basin}
+# Set up output sub-directories
+# Create sub-directories within the objects directory
+################################################### 
+fryxell1.fp <- paste0(objects.fp, "/fryxell")
+if (!dir.exists(fryxell1.fp)) dir.create(fryxell1.fp)
+
+# Check for the Output folder 
+list.files(objects.fp) 
+
+# Create sub-directories within the output directory
+################################################### 
+fryxell2.fp <- paste0(output.fp, "/fryxell")
+if (!dir.exists(fryxell2.fp)) dir.create(fryxell2.fp)
+
+figures.fp <- paste0(output.fp, "/figures") 
+if (!dir.exists(figures.fp)) dir.create(figures.fp)
+
+# Check for the Output folder 
+list.files(output.fp) 
+```
+
+#### Input files   
+Required input files:   
+  
+1.  The ASV table from DADA2 pipeline 
+2.  The 'mapping file' w/ relevant metadata for each sample
+
+Input files and re-format for use in pipeline
+
+```{r set paths to raw data and create input objects}
+# ASV Table (from DADA2)
+asvTable.EUK.fp <- paste0(input.fp, "/ASVtable_18S_wTax_fryxell.txt") 
+
+# Mapping File (metadata relevant for study samples)
+mappingFile.fp <- paste0(input.fp, "/map_file_fryxell.txt") 
+
+#input 18s ASV table w/ taxonomy
+asvTab.EUK <- read.table(asvTable.EUK.fp,  header = T, sep = "\t")
+
+#input metadata
+mapfile <- read.table(mappingFile.fp, header = T, sep = "\t")
+
+```
+
+#### Format files
+```{r create new data frame for taxonomy seprate from ASV count table}
+# remove taxonomy from ASV table 
+taxTab <- asvTab.EUK %>% select(Domain:Genus)
+
+# create data.frame w/ ASV ID as row names
+rownames(taxTab) <- asvTab.EUK$ASV_ID
+
+# move row names (ASV ID) to 1st column
+taxTab <- tibble::rownames_to_column(taxTab, "ASV_ID")
+
+#remove taxonomy column from ASV table
+asvTab.EUK.1 <- asvTab.EUK %>% select(!Domain:Genus)
+
+#set ASV IDs as row names
+rownames(asvTab.EUK.1) <- asvTab.EUK.1$ASV_ID
+
+#remove ASV IDs column
+asvTab.EUK.1$ASV_ID <- NULL
+
+#transpose so columns (SampleIDs) are rows
+asvTab.EUK.2 <- as.data.frame(t(asvTab.EUK.1))
+
+#move row names into 1st column
+asvTab.EUK.2 <- asvTab.EUK.2 %>% rownames_to_column("SampleID")
+```
+
+####Subset samples
+1. Subset samples from basin into experimental groups (i.e., Bulk, CTRL, N, P, NP)
+
+```{r subset mapping file and ASV tables according to basin}
+# subset mapping file by treatment
+
+# subset 'bulk'
+#####################################################
+fryxell.f <- filter(mapfile, treatment == "bulk") 
+
+# create object w/ dplyr to subset ASV table
+samp.sub.f.b <- dplyr::pull(fryxell.f, SampleID)
+
+# subset samples by using only samples IDs in chosen mapping file
+asvTab.EUK.f.b <- asvTab.EUK.2[asvTab.EUK.2$SampleID %in% samp.sub.f.b, ]
+
+# move sample IDs EUKk to row names 
+rownames(asvTab.EUK.f.b) <- asvTab.EUK.f.b$SampleID
+
+# remove sample ID column
+asvTab.EUK.f.b$SampleID <- NULL
+
+# transpose ASV table EUKk to samples as columns (ASVs as rows)
+asvTab.EUK.f.b.1 <- as.data.frame(t(asvTab.EUK.f.b))
+
+#recode values as numeric (from character)
+asvTab.EUK.f.b.1 <- asvTab.EUK.f.b.1 %>% mutate_if(is.character,as.numeric)
+
+# subset 'controls' (i.e., microcosms w/ no nutrients added)
+#####################################################
+fryxell.c <- filter(mapfile, treatment == "CTRL") 
+
+# create object w/ dplyr to subset ASV table
+samp.sub.f.c <- dplyr::pull(fryxell.c, SampleID)
+
+# subset samples by using only samples IDs in chosen mapping file
+asvTab.EUK.f.c <- asvTab.EUK.2[asvTab.EUK.2$SampleID %in% samp.sub.f.c, ]
+
+# move sample IDs EUKk to row names 
+rownames(asvTab.EUK.f.c) <- asvTab.EUK.f.c$SampleID
+
+# remove sample ID column
+asvTab.EUK.f.c$SampleID <- NULL
+
+# transpose ASV table EUKk to samples as columns (ASVs as rows)
+asvTab.EUK.f.c.1 <- as.data.frame(t(asvTab.EUK.f.c))
+
+#recode values as numeric (from character)
+asvTab.EUK.f.c.1 <- asvTab.EUK.f.c.1 %>% mutate_if(is.character,as.numeric)
+
+#subset N treatment (i.e., treatments with 30ug/g N)
+#####################################################
+fryxell.n <- filter(mapfile, treatment == "N") 
+
+# create object w/ dplyr to subset ASV table
+samp.sub.f.n <- dplyr::pull(fryxell.n, SampleID)
+
+# subset samples by using only samples IDs in chosen mapping file
+asvTab.EUK.f.n <- asvTab.EUK.2[asvTab.EUK.2$SampleID %in% samp.sub.f.n, ]
+
+# move sample IDs EUKk to row names 
+rownames(asvTab.EUK.f.n) <- asvTab.EUK.f.n$SampleID
+
+# remove sample ID column
+asvTab.EUK.f.n$SampleID <- NULL
+
+# transpose ASV table EUKk to samples as columns (ASVs as rows)
+asvTab.EUK.f.n.1 <- as.data.frame(t(asvTab.EUK.f.n))
+
+#recode values as numeric (from character)
+asvTab.EUK.f.n.1 <- asvTab.EUK.f.n.1 %>% mutate_if(is.character,as.numeric)
+
+#subset P treatment (i.e., treatments with 30ug/g P)
+#####################################################
+fryxell.p <- filter(mapfile, treatment == "P") 
+
+# create object w/ dplyr to subset ASV table
+samp.sub.f.p <- dplyr::pull(fryxell.p, SampleID)
+
+# subset samples by using only samples IDs in chosen mapping file
+asvTab.EUK.f.p <- asvTab.EUK.2[asvTab.EUK.2$SampleID %in% samp.sub.f.p, ]
+
+# move sample IDs EUKk to row names 
+rownames(asvTab.EUK.f.p) <- asvTab.EUK.f.p$SampleID
+
+# remove sample ID column
+asvTab.EUK.f.p$SampleID <- NULL
+
+# transpose ASV table EUKk to samples as columns (ASVs as rows)
+asvTab.EUK.f.p.1 <- as.data.frame(t(asvTab.EUK.f.p))
+
+#recode values as numeric (from character)
+asvTab.EUK.f.p.1 <- asvTab.EUK.f.p.1 %>% mutate_if(is.character,as.numeric)
+
+#subset N & P treatment (i.e., treatments with 30ug/g N + 30ug/g P)
+#####################################################
+fryxell.np <- filter(mapfile, treatment == "NP") 
+
+# create object w/ dplyr to subset ASV table
+samp.sub.f.np <- dplyr::pull(fryxell.np, SampleID)
+
+# subset samples by using only samples IDs in chosen mapping file
+asvTab.EUK.f.np <- asvTab.EUK.2[asvTab.EUK.2$SampleID %in% samp.sub.f.np, ]
+
+# move sample IDs EUKk to row names 
+rownames(asvTab.EUK.f.np) <- asvTab.EUK.f.np$SampleID
+
+# remove sample ID column
+asvTab.EUK.f.np$SampleID <- NULL
+
+# transpose ASV table EUKk to samples as columns (ASVs as rows)
+asvTab.EUK.f.np.1 <- as.data.frame(t(asvTab.EUK.f.np))
+
+#recode values as numeric (from character)
+asvTab.EUK.f.np.1 <- asvTab.EUK.f.np.1 %>% mutate_if(is.character,as.numeric)
+
+```
+
+```{r create new columns with row sums and reorder rows by descending value}
+# Bulk samples
+########################################################
+# create row sum column
+asvTab.EUK.f.b.2 <- asvTab.EUK.f.b.1 %>% mutate(total = rowSums(.))
+
+# re-order with greatest row sum 1st
+asvTab.EUK.f.b.2 <- asvTab.EUK.f.b.2 %>% arrange(desc(total))
+
+# CTRL samples
+########################################################
+# create row sum column
+asvTab.EUK.f.c.2 <- asvTab.EUK.f.c.1 %>% mutate(total = rowSums(.))
+
+# re-order with greatest row sum 1st
+asvTab.EUK.f.c.2 <- asvTab.EUK.f.c.2 %>% arrange(desc(total))
+
+# N samples
+########################################################
+# create row sum column
+asvTab.EUK.f.n.2 <- asvTab.EUK.f.n.1 %>% mutate(total = rowSums(.))
+
+# re-order with greatest row sum 1st
+asvTab.EUK.f.n.2 <- asvTab.EUK.f.n.2 %>% arrange(desc(total))
+
+# P samples
+########################################################
+# create row sum column
+asvTab.EUK.f.p.2 <- asvTab.EUK.f.p.1 %>% mutate(total = rowSums(.))
+
+# re-order with greatest row sum 1st
+asvTab.EUK.f.p.2 <- asvTab.EUK.f.p.2 %>% arrange(desc(total))
+
+# NP samples
+########################################################
+# create row sum column
+asvTab.EUK.f.np.2 <- asvTab.EUK.f.np.1 %>% mutate(total = rowSums(.))
+
+# re-order with greatest row sum 1st
+asvTab.EUK.f.np.2 <- asvTab.EUK.f.np.2 %>% arrange(desc(total))
+
+```
+
+```{r remove rows (i.e., ASVs) that contain zeros}
+# Bulk samples
+########################################################
+# create row sum column
+asvTab.EUK.f.b.3 <- asvTab.EUK.f.b.2 %>% filter(total!= 0)
+
+# CTRL samples
+########################################################
+# create row sum column
+asvTab.EUK.f.c.3 <- asvTab.EUK.f.c.2 %>% filter(total!= 0)
+
+# N samples
+########################################################
+# create row sum column
+asvTab.EUK.f.n.3 <- asvTab.EUK.f.n.2 %>% filter(total!= 0)
+
+# P samples
+########################################################
+# create row sum column
+asvTab.EUK.f.p.3 <- asvTab.EUK.f.p.2 %>% filter(total!= 0)
+
+# NP samples
+########################################################
+# create row sum column
+asvTab.EUK.f.np.3 <- asvTab.EUK.f.np.2 %>% filter(total!= 0)
+
+```
+
+```{r calculate relative abundance (%)}
+# Bulk samples
+########################################################
+# calculate relative abundance of each cell by column value
+asvTab.EUK.f.b.4 <- asvTab.EUK.f.b.3 %>% apply(2, function(x){x/sum(x)}) 
+# multiply by 100 for percentage
+asvTab.EUK.f.b.5 <- asvTab.EUK.f.b.4 %>% apply(2, function(x){x *100})
+# classify as a data frame
+asvTab.EUK.f.b.5 <- as.data.frame(asvTab.EUK.f.b.5)
+
+# CTRL samples
+########################################################
+# calculate relative abundance of each cell by column value
+asvTab.EUK.f.c.4 <- asvTab.EUK.f.c.3 %>% apply(2, function(x){x/sum(x)})
+# multiply by 100 for percentage
+asvTab.EUK.f.c.5 <- asvTab.EUK.f.c.4 %>% apply(2, function(x){x *100})
+# classify as a data frame
+asvTab.EUK.f.c.5 <- as.data.frame(asvTab.EUK.f.c.5)
+
+# N samples
+########################################################
+# calculate relative abundance of each cell by column value
+asvTab.EUK.f.n.4 <- asvTab.EUK.f.n.3 %>% apply(2, function(x){x/sum(x)})
+# multiply by 100 for percentage
+asvTab.EUK.f.n.5 <- asvTab.EUK.f.n.4 %>% apply(2, function(x){x *100})
+# classify as a data frame
+asvTab.EUK.f.n.5 <- as.data.frame(asvTab.EUK.f.n.5)
+
+# P samples
+########################################################
+# calculate relative abundance of each cell by column value
+asvTab.EUK.f.p.4 <- asvTab.EUK.f.p.3 %>% apply(2, function(x){x/sum(x)})
+# multiply by 100 for percentage
+asvTab.EUK.f.p.5 <- asvTab.EUK.f.p.4 %>% apply(2, function(x){x *100})
+# classify as a data frame
+asvTab.EUK.f.p.5 <- as.data.frame(asvTab.EUK.f.p.5)
+
+# NP samples
+########################################################
+# calculate relative abundance of each cell by column value
+asvTab.EUK.f.np.4 <- asvTab.EUK.f.np.3 %>% apply(2, function(x){x/sum(x)})
+# multiply by 100 for percentage
+asvTab.EUK.f.np.5 <- asvTab.EUK.f.np.4 %>% apply(2, function(x){x *100})
+# classify as a data frame
+asvTab.EUK.f.np.5 <- as.data.frame(asvTab.EUK.f.np.5)
+
+```
+
+```{r remove some samples (columns) that create XXX issues}
+# Bulk samples extracted with different extraction kit
+asvTab.EUK.f.b.F <- asvTab.EUK.f.b.1 %>% select(-c(FX_Bulk_X, FX_Bulk_Y, FX_Bulk_Z))
+
+```
+
+```{r create new columns with row sums and reorder rows by descending value}
+# Bulk samples
+########################################################
+# create row sum column
+asvTab.EUK.f.b.F.1 <- asvTab.EUK.f.b.F %>% mutate(total = rowSums(.))
+
+# re-order with greatest row sum 1st
+asvTab.EUK.f.b.F.2 <- asvTab.EUK.f.b.F.1 %>% arrange(desc(total))
+
+```
+
+
+```{r remove rows (i.e., ASVs) that contain zeros}
+# Bulk samples
+########################################################
+# create row sum column
+asvTab.EUK.f.b.F.3 <- asvTab.EUK.f.b.F.2 %>% filter(total!= 0)
+
+```
+
+
+```{r calculate relative abundance (%)}
+# Bulk samples
+########################################################
+# calculate relative abundance of each cell by column value
+asvTab.EUK.f.b.F.4 <- asvTab.EUK.f.b.F.3 %>% apply(2, function(x){x/sum(x)}) 
+# multiply by 100 for percentage
+asvTab.EUK.f.b.F.5 <- asvTab.EUK.f.b.F.4 %>% apply(2, function(x){x *100})
+# classify as a data frame
+asvTab.EUK.f.b.F.5 <- as.data.frame(asvTab.EUK.f.b.F.5)
+
+```
+
+####Add Taxonomy EUKk-in to identify ESVs
+
+```{r merge the taxonomy data frame w/ the ESV relative abundance (%) data frames}
+# Bulk samples
+########################################################
+# move rownames of ASV table into 1st column as 'ASV_ID'
+asvTab.EUK.f.b.F.5 <- tibble::rownames_to_column(asvTab.EUK.f.b.F.5, "ASV_ID")
+# Left Join using inner_join function from dplyr
+asvTab.EUK.f.b.F.T <- asvTab.EUK.f.b.F.5 %>% inner_join(taxTab, by= "ASV_ID")
+
+# CTRL samples
+########################################################
+# move rownames of ASV table into 1st column as 'ASV_ID'
+asvTab.EUK.f.c.5 <- tibble::rownames_to_column(asvTab.EUK.f.c.5, "ASV_ID")
+# Left Join using inner_join function from dplyr
+asvTab.EUK.f.c.5.T <- asvTab.EUK.f.c.5 %>% inner_join(taxTab, by= "ASV_ID")
+
+# N samples
+########################################################
+# move rownames of ASV table into 1st column as 'ASV_ID'
+asvTab.EUK.f.n.5 <- tibble::rownames_to_column(asvTab.EUK.f.n.5, "ASV_ID")
+# Left Join using inner_join function from dplyr
+asvTab.EUK.f.n.5.T <- asvTab.EUK.f.n.5 %>% inner_join(taxTab, by= "ASV_ID")
+
+# P samples
+########################################################
+# move rownames of ASV table into 1st column as 'ASV_ID'
+asvTab.EUK.f.p.5 <- tibble::rownames_to_column(asvTab.EUK.f.p.5, "ASV_ID")
+# Left Join using inner_join function from dplyr
+asvTab.EUK.f.p.5.T <- asvTab.EUK.f.p.5 %>% inner_join(taxTab, by= "ASV_ID")
+
+# NP samples
+########################################################
+# move rownames of ASV table into 1st column as 'ASV_ID'
+asvTab.EUK.f.np.5 <- tibble::rownames_to_column(asvTab.EUK.f.np.5, "ASV_ID")
+# Left Join using inner_join function from dplyr
+asvTab.EUK.f.np.5.T <- asvTab.EUK.f.np.5 %>% inner_join(taxTab, by= "ASV_ID")
+
+```
+
+Save as R objects and .txt files
+
+```{r}
+# Bulk samples
+########################################################
+# save as an R file
+saveRDS(asvTab.EUK.f.b.F.T, paste0(fryxell1.fp, "/asvTab.EUK.f.b.F.T.rds"))
+#save as .txt file
+write.table(asvTab.EUK.f.b.F.T, file = paste0(fryxell2.fp, "/fryxellBulk_18S_RelativeAbundance.txt"), 
+            sep = "\t", row.names = TRUE, col.names = NA)
+
+# CTRL samples
+########################################################
+# save as an R file
+saveRDS(asvTab.EUK.f.c.5.T, paste0(fryxell1.fp, "/asvTab.EUK.f.c.5.T.rds"))
+#save as .txt file
+write.table(asvTab.EUK.f.c.5.T, file = paste0(fryxell2.fp, "/fryxellCTRL_18S_RelativeAbundance.txt"), 
+            sep = "\t", row.names = TRUE, col.names = NA)
+
+# N samples
+########################################################
+# save as an R file
+saveRDS(asvTab.EUK.f.n.5.T, paste0(fryxell1.fp, "/asvTab.EUK.f.n.5.T.rds"))
+#save as .txt file
+write.table(asvTab.EUK.f.n.5.T, file = paste0(fryxell2.fp, "/fryxellN_18S_RelativeAbundance.txt"), 
+            sep = "\t", row.names = TRUE, col.names = NA)
+
+# P samples
+########################################################
+# save as an R file
+saveRDS(asvTab.EUK.f.p.5.T, paste0(fryxell1.fp, "/asvTab.EUK.f.p.5.T.rds"))
+#save as .txt file
+write.table(asvTab.EUK.f.p.5.T, file = paste0(fryxell2.fp, "/fryxellP_18S_RelativeAbundance.txt"), 
+            sep = "\t", row.names = TRUE, col.names = NA)
+
+# NP samples
+########################################################
+# save as an R file
+saveRDS(asvTab.EUK.f.np.5.T, paste0(fryxell1.fp, "/asvTab.EUK.f.np.F.T.rds"))
+#save as .txt file
+write.table(asvTab.EUK.f.np.5.T, file = paste0(fryxell2.fp, "/fryxellNP_18S_RelativeAbundance.txt"), 
+            sep = "\t", row.names = TRUE, col.names = NA)
+```
